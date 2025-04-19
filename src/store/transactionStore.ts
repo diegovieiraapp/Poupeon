@@ -13,7 +13,20 @@ import {
   onSnapshot,
   orderBy
 } from 'firebase/firestore';
-import { format, isEqual, startOfDay } from 'date-fns';
+import { 
+  format, 
+  parseISO,
+  startOfDay,
+  endOfDay,
+  isSameDay,
+  isAfter,
+  isBefore,
+  addDays,
+  getDay,
+  getDate,
+  startOfMonth,
+  endOfMonth
+} from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 export type TransactionType = 'income' | 'expense';
@@ -28,8 +41,8 @@ export interface Transaction {
   date: string;
   type: TransactionType;
   recurrence: RecurrenceType;
-  recurrenceDay?: number;
-  weekDay?: number;
+  recurrenceDay: number | null;
+  weekDay: number | null;
   createdAt?: Timestamp;
 }
 
@@ -53,6 +66,12 @@ interface TransactionState {
     byCategoryExpense: { [category: string]: number };
   };
 }
+
+const normalizeDate = (date: Date | string): string => {
+  const dateObj = typeof date === 'string' ? parseISO(date) : date;
+  const normalizedDate = startOfDay(dateObj);
+  return format(normalizedDate, 'yyyy-MM-dd');
+};
 
 export const useTransactionStore = create<TransactionState>((set, get) => ({
   transactions: [],
@@ -82,9 +101,9 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
               ...data,
               amount: Number(data.amount) || 0,
               recurrence: data.recurrence || 'none',
-              date: data.date || format(data.createdAt?.toDate() || new Date(), 'yyyy-MM-dd'),
-              recurrenceDay: data.recurrenceDay ? Number(data.recurrenceDay) : undefined,
-              weekDay: data.weekDay !== undefined ? Number(data.weekDay) : undefined
+              date: data.date || normalizeDate(data.createdAt?.toDate() || new Date()),
+              recurrenceDay: data.recurrenceDay !== undefined ? Number(data.recurrenceDay) : null,
+              weekDay: data.weekDay !== undefined ? Number(data.weekDay) : null
             } as Transaction;
           });
           
@@ -107,12 +126,15 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
     try {
       set({ isLoading: true });
       
+      const transactionDate = parseISO(transaction.date);
+      
       const transactionData = {
         ...transaction,
         amount: Number(transaction.amount),
+        date: normalizeDate(transactionDate),
         createdAt: Timestamp.now(),
-        recurrenceDay: transaction.recurrence === 'monthly' ? Number(transaction.recurrenceDay) : null,
-        weekDay: transaction.recurrence === 'weekly' ? Number(transaction.weekDay) : null
+        weekDay: transaction.recurrence === 'weekly' ? getDay(transactionDate) : null,
+        recurrenceDay: transaction.recurrence === 'monthly' ? getDate(transactionDate) : null
       };
 
       await addDoc(collection(db, 'transactions'), transactionData);
@@ -127,15 +149,41 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
     try {
       set({ isLoading: true });
       
-      const transactionRef = doc(db, 'transactions', id);
-      const updates = {
+      const updates: any = {
         ...updatedFields,
         amount: updatedFields.amount ? Number(updatedFields.amount) : undefined,
-        recurrenceDay: updatedFields.recurrence === 'monthly' ? Number(updatedFields.recurrenceDay) : null,
-        weekDay: updatedFields.recurrence === 'weekly' ? Number(updatedFields.weekDay) : null,
         updatedAt: Timestamp.now()
       };
 
+      if (updatedFields.date) {
+        const date = parseISO(updatedFields.date);
+        updates.date = normalizeDate(date);
+        
+        if (updatedFields.recurrence === 'weekly') {
+          updates.weekDay = getDay(date);
+          updates.recurrenceDay = null;
+        } else if (updatedFields.recurrence === 'monthly') {
+          updates.recurrenceDay = getDate(date);
+          updates.weekDay = null;
+        } else {
+          updates.weekDay = null;
+          updates.recurrenceDay = null;
+        }
+      } else if (updatedFields.recurrence !== undefined) {
+        if (updatedFields.recurrence === 'none') {
+          updates.weekDay = null;
+          updates.recurrenceDay = null;
+        }
+      }
+
+      // Remove undefined values
+      Object.keys(updates).forEach(key => {
+        if (updates[key] === undefined) {
+          delete updates[key];
+        }
+      });
+
+      const transactionRef = doc(db, 'transactions', id);
       await updateDoc(transactionRef, updates);
     } catch (error) {
       console.error('Erro ao atualizar transação:', error);
@@ -166,26 +214,70 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
     }));
   },
   
-  getTransactionsByDateRange: (startDate, endDate) => {
+  getTransactionsByDateRange: (startDate: Date, endDate: Date) => {
     const { transactions } = get();
     const start = startOfDay(startDate);
-    const end = startOfDay(endDate);
+    const end = endOfDay(endDate);
+    const result: Transaction[] = [];
 
-    return transactions.filter((t) => {
-      const transactionDate = startOfDay(new Date(t.date));
-      return transactionDate >= start && transactionDate <= end;
+    transactions.forEach(t => {
+      const transactionDate = parseISO(t.date);
+
+      // Handle non-recurring transactions
+      if (t.recurrence === 'none') {
+        if (isSameDay(transactionDate, start) || isSameDay(transactionDate, end) || 
+            (isAfter(transactionDate, start) && isBefore(transactionDate, end))) {
+          result.push(t);
+        }
+        return;
+      }
+
+      // Handle weekly recurring transactions
+      if (t.recurrence === 'weekly' && t.weekDay !== null) {
+        let currentDate = startOfDay(transactionDate);
+        
+        while (!isAfter(currentDate, end)) {
+          if ((isSameDay(currentDate, start) || isAfter(currentDate, start)) && 
+              (isBefore(currentDate, end) || isSameDay(currentDate, end)) && 
+              getDay(currentDate) === t.weekDay) {
+            result.push({
+              ...t,
+              date: normalizeDate(currentDate)
+            });
+          }
+          currentDate = addDays(currentDate, 1);
+        }
+      }
+      
+      // Handle monthly recurring transactions
+      else if (t.recurrence === 'monthly' && t.recurrenceDay !== null) {
+        let currentDate = startOfDay(transactionDate);
+        
+        while (!isAfter(currentDate, end)) {
+          if (getDate(currentDate) === t.recurrenceDay && 
+              (isSameDay(currentDate, start) || isAfter(currentDate, start)) && 
+              (isBefore(currentDate, end) || isSameDay(currentDate, end))) {
+            result.push({
+              ...t,
+              date: normalizeDate(currentDate)
+            });
+          }
+          currentDate = addDays(currentDate, 1);
+        }
+      }
+    });
+
+    return result.sort((a, b) => {
+      const dateA = parseISO(a.date);
+      const dateB = parseISO(b.date);
+      return dateA.getTime() - dateB.getTime();
     });
   },
   
-  getTransactionsByMonth: (year, month) => {
-    const { transactions } = get();
-    const formatStr = 'yyyy-MM';
-    const targetMonth = format(new Date(year, month), formatStr, { locale: ptBR });
-    
-    return transactions.filter((t) => {
-      const transactionMonth = format(new Date(t.date), formatStr, { locale: ptBR });
-      return transactionMonth === targetMonth;
-    });
+  getTransactionsByMonth: (year: number, month: number) => {
+    const startDate = startOfMonth(new Date(year, month));
+    const endDate = endOfMonth(startDate);
+    return get().getTransactionsByDateRange(startDate, endDate);
   },
 
   getRecurringTransactions: () => {
@@ -193,7 +285,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
     return transactions.filter(t => t.recurrence !== 'none');
   },
   
-  getSummary: (startDate, endDate) => {
+  getSummary: (startDate: Date, endDate: Date) => {
     const transactions = get().getTransactionsByDateRange(startDate, endDate);
     
     let totalIncome = 0;

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { useTransactionStore } from '../store/transactionStore';
-import { subMonths, startOfMonth, endOfMonth, format } from 'date-fns';
+import { subMonths, startOfMonth, endOfMonth, format, startOfDay, endOfDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Doughnut, Line } from 'react-chartjs-2';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearScale, PointElement, LineElement, Title } from 'chart.js';
@@ -40,9 +40,6 @@ const Dashboard = () => {
   const prevMonthStart = startOfMonth(subMonths(currentDate, 1));
   const prevMonthEnd = endOfMonth(subMonths(currentDate, 1));
   
-  // Filter transactions for current user
-  const userTransactions = transactions.filter(t => t.userId === user?.id);
-  
   // Get financial summary for current month
   const currentMonthSummary = getSummary(currentMonthStart, currentMonthEnd);
   
@@ -62,8 +59,9 @@ const Dashboard = () => {
     ? ((currentMonthSummary.balance - prevMonthSummary.balance) / Math.abs(prevMonthSummary.balance)) * 100
     : 0;
   
-  // Get recent transactions
-  const recentTransactions = [...userTransactions]
+  // Get recent transactions (excluding future recurring transactions)
+  const today = endOfDay(new Date());
+  const recentTransactions = getTransactionsByDateRange(startOfMonth(subMonths(today, 1)), today)
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     .slice(0, 5);
   
