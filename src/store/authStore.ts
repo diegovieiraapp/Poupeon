@@ -13,6 +13,7 @@ interface User {
   name: string;
   email: string;
   currency?: string;
+  emergencyFund?: number;
 }
 
 interface AuthState {
@@ -22,6 +23,7 @@ interface AuthState {
   register: (name: string, email: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
   updateUserCurrency: (currency: string) => Promise<void>;
+  updateEmergencyFund: (amount: number) => Promise<void>;
 }
 
 const MAX_RETRIES = 3;
@@ -68,7 +70,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           id: uid, 
           name: displayName || 'Usuário', 
           email: userEmail || '',
-          currency: userData?.currency || 'BRL'
+          currency: userData?.currency || 'BRL',
+          emergencyFund: userData?.emergencyFund || 0
         }, 
         isAuthenticated: true 
       });
@@ -101,6 +104,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           name,
           email,
           currency: 'BRL',
+          emergencyFund: 0,
           createdAt: new Date()
         });
       };
@@ -112,7 +116,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           id: userCredential.user.uid, 
           name, 
           email,
-          currency: 'BRL'
+          currency: 'BRL',
+          emergencyFund: 0
         }, 
         isAuthenticated: true 
       });
@@ -159,6 +164,31 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       console.error('Erro ao atualizar moeda:', error);
       throw error;
     }
+  },
+
+  updateEmergencyFund: async (amount: number) => {
+    const { user } = get();
+    if (!user) return;
+
+    if (!getConnectionStatus()) {
+      throw new Error('Sem conexão com a internet. Por favor, verifique sua conexão e tente novamente.');
+    }
+
+    const updateFund = async () => {
+      await updateDoc(doc(db, 'users', user.id), {
+        emergencyFund: amount
+      });
+    };
+
+    try {
+      await retryWithExponentialBackoff(updateFund);
+      set(state => ({
+        user: state.user ? { ...state.user, emergencyFund: amount } : null
+      }));
+    } catch (error) {
+      console.error('Erro ao atualizar reserva de emergência:', error);
+      throw error;
+    }
   }
 }));
 
@@ -170,7 +200,8 @@ auth.onAuthStateChanged(async (user) => {
       id: user.uid,
       name: user.displayName || 'Usuário',
       email: user.email || '',
-      currency: 'BRL'
+      currency: 'BRL',
+      emergencyFund: 0
     };
 
     // Set initial state with basic data
@@ -193,7 +224,8 @@ auth.onAuthStateChanged(async (user) => {
         useAuthStore.setState({
           user: {
             ...basicUserData,
-            currency: userData?.currency || 'BRL'
+            currency: userData?.currency || 'BRL',
+            emergencyFund: userData?.emergencyFund || 0
           },
           isAuthenticated: true
         });

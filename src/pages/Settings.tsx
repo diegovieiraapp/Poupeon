@@ -3,13 +3,27 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { useTransactionStore, TransactionType } from '../store/transactionStore';
 import { useForm } from 'react-hook-form';
-import { Save, PlusCircle, Trash2, User, Mail, Lock, DollarSign } from 'lucide-react';
+import { 
+  Save, 
+  PlusCircle, 
+  Trash2, 
+  User, 
+  Mail, 
+  Lock, 
+  DollarSign,
+  Wallet,
+  ShieldCheck
+} from 'lucide-react';
 
 interface ProfileFormData {
   name: string;
   email: string;
   newPassword: string;
   confirmPassword: string;
+}
+
+interface EmergencyFundFormData {
+  amount: number;
 }
 
 const currencies = [
@@ -20,20 +34,22 @@ const currencies = [
 
 const Settings = () => {
   const navigate = useNavigate();
-  const { user, logout, updateUserCurrency } = useAuthStore();
+  const { user, logout, updateUserCurrency, updateEmergencyFund } = useAuthStore();
   const { categories, addCategory } = useTransactionStore();
   
-  const [activeTab, setActiveTab] = useState<'profile' | 'categories' | 'preferences'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'categories' | 'preferences' | 'emergency'>('profile');
   const [newCategoryName, setNewCategoryName] = useState('');
   const [categoryType, setCategoryType] = useState<TransactionType>('expense');
+  const [showCategoryInput, setShowCategoryInput] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
   const [error, setError] = useState('');
   const [currencySaved, setCurrencySaved] = useState(false);
+  const [emergencyFundSaved, setEmergencyFundSaved] = useState(false);
   
   const { 
-    register, 
-    handleSubmit, 
-    formState: { errors },
+    register: registerProfile, 
+    handleSubmit: handleSubmitProfile, 
+    formState: { errors: profileErrors },
     watch
   } = useForm<ProfileFormData>({
     defaultValues: {
@@ -41,6 +57,17 @@ const Settings = () => {
       email: user?.email || '',
       newPassword: '',
       confirmPassword: ''
+    }
+  });
+
+  const { 
+    register: registerEmergencyFund,
+    handleSubmit: handleSubmitEmergencyFund,
+    formState: { errors: emergencyFundErrors },
+    setValue: setEmergencyFundValue
+  } = useForm<EmergencyFundFormData>({
+    defaultValues: {
+      amount: user?.emergencyFund || 0
     }
   });
   
@@ -53,21 +80,25 @@ const Settings = () => {
       setProfileSaved(false);
     }, 3000);
   };
+
+  const onSubmitEmergencyFund = async (data: EmergencyFundFormData) => {
+    try {
+      await updateEmergencyFund(data.amount);
+      setEmergencyFundSaved(true);
+      setTimeout(() => {
+        setEmergencyFundSaved(false);
+      }, 3000);
+    } catch (error) {
+      setError('Erro ao atualizar reserva de emergência');
+    }
+  };
   
   const handleAddCategory = () => {
-    if (!newCategoryName.trim()) {
-      setError('Category name cannot be empty');
-      return;
+    if (newCategoryName.trim() && !categories[categoryType].includes(newCategoryName)) {
+      addCategory(categoryType, newCategoryName);
+      setNewCategoryName('');
+      setShowCategoryInput(false);
     }
-    
-    if (categories[categoryType].includes(newCategoryName)) {
-      setError('Category already exists');
-      return;
-    }
-    
-    addCategory(categoryType, newCategoryName);
-    setNewCategoryName('');
-    setError('');
   };
 
   const handleCurrencyChange = async (currency: string) => {
@@ -82,7 +113,7 @@ const Settings = () => {
   
   return (
     <div className="py-6 fadeIn">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Settings</h1>
+      <h1 className="text-2xl font-bold text-gray-900 mb-6">Configurações</h1>
       
       {/* Tab Navigation */}
       <div className="bg-white rounded-lg shadow-sm mb-6">
@@ -95,7 +126,7 @@ const Settings = () => {
                 : 'text-gray-600 hover:text-gray-900'
             }`}
           >
-            Profile Settings
+            Perfil
           </button>
           <button
             onClick={() => setActiveTab('categories')}
@@ -105,7 +136,7 @@ const Settings = () => {
                 : 'text-gray-600 hover:text-gray-900'
             }`}
           >
-            Categories
+            Categorias
           </button>
           <button
             onClick={() => setActiveTab('preferences')}
@@ -115,25 +146,35 @@ const Settings = () => {
                 : 'text-gray-600 hover:text-gray-900'
             }`}
           >
-            Preferences
+            Preferências
+          </button>
+          <button
+            onClick={() => setActiveTab('emergency')}
+            className={`px-4 py-3 text-sm font-medium whitespace-nowrap ${
+              activeTab === 'emergency' 
+                ? 'text-primary-600 border-b-2 border-primary-500' 
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Reserva de Emergência
           </button>
         </div>
       </div>
       
       {activeTab === 'profile' && (
         <div className="bg-white rounded-lg shadow-sm p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Profile Information</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Informações do Perfil</h2>
           
           {profileSaved && (
             <div className="mb-4 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-md">
-              Profile updated successfully!
+              Perfil atualizado com sucesso!
             </div>
           )}
           
-          <form onSubmit={handleSubmit(onSubmitProfile)}>
+          <form onSubmit={handleSubmitProfile(onSubmitProfile)}>
             <div className="mb-4">
               <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
-                Full Name
+                Nome Completo
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -143,19 +184,19 @@ const Settings = () => {
                   id="name"
                   type="text"
                   className={`pl-10 block w-full border ${
-                    errors.name ? 'border-red-300' : 'border-gray-300'
+                    profileErrors.name ? 'border-red-300' : 'border-gray-300'
                   } rounded-md shadow-sm py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500`}
-                  {...register('name', { required: 'Name is required' })}
+                  {...registerProfile('name', { required: 'Nome é obrigatório' })}
                 />
               </div>
-              {errors.name && (
-                <p className="mt-1 text-sm text-red-600">{errors.name.message}</p>
+              {profileErrors.name && (
+                <p className="mt-1 text-sm text-red-600">{profileErrors.name.message}</p>
               )}
             </div>
             
             <div className="mb-4">
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
-                Email Address
+                Email
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -165,25 +206,25 @@ const Settings = () => {
                   id="email"
                   type="email"
                   className={`pl-10 block w-full border ${
-                    errors.email ? 'border-red-300' : 'border-gray-300'
+                    profileErrors.email ? 'border-red-300' : 'border-gray-300'
                   } rounded-md shadow-sm py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500`}
-                  {...register('email', { 
-                    required: 'Email is required',
+                  {...registerProfile('email', { 
+                    required: 'Email é obrigatório', 
                     pattern: {
                       value: /\S+@\S+\.\S+/,
-                      message: 'Please enter a valid email address',
-                    }
+                      message: 'Por favor, insira um email válido',
+                    } 
                   })}
                 />
               </div>
-              {errors.email && (
-                <p className="mt-1 text-sm text-red-600">{errors.email.message}</p>
+              {profileErrors.email && (
+                <p className="mt-1 text-sm text-red-600">{profileErrors.email.message}</p>
               )}
             </div>
             
             <div className="mb-4">
               <label htmlFor="newPassword" className="block text-sm font-medium text-gray-700 mb-1">
-                New Password (leave blank to keep current password)
+                Nova Senha (deixe em branco para manter a atual)
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -193,24 +234,24 @@ const Settings = () => {
                   id="newPassword"
                   type="password"
                   className={`pl-10 block w-full border ${
-                    errors.newPassword ? 'border-red-300' : 'border-gray-300'
+                    profileErrors.newPassword ? 'border-red-300' : 'border-gray-300'
                   } rounded-md shadow-sm py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500`}
-                  {...register('newPassword', {
+                  {...registerProfile('newPassword', {
                     minLength: {
                       value: 6,
-                      message: 'Password must be at least 6 characters',
+                      message: 'A senha deve ter pelo menos 6 caracteres',
                     },
                   })}
                 />
               </div>
-              {errors.newPassword && (
-                <p className="mt-1 text-sm text-red-600">{errors.newPassword.message}</p>
+              {profileErrors.newPassword && (
+                <p className="mt-1 text-sm text-red-600">{profileErrors.newPassword.message}</p>
               )}
             </div>
             
             <div className="mb-6">
               <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1">
-                Confirm New Password
+                Confirmar Nova Senha
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -220,16 +261,16 @@ const Settings = () => {
                   id="confirmPassword"
                   type="password"
                   className={`pl-10 block w-full border ${
-                    errors.confirmPassword ? 'border-red-300' : 'border-gray-300'
+                    profileErrors.confirmPassword ? 'border-red-300' : 'border-gray-300'
                   } rounded-md shadow-sm py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500`}
-                  {...register('confirmPassword', {
+                  {...registerProfile('confirmPassword', {
                     validate: value => 
-                      !newPassword || value === newPassword || 'Passwords do not match',
+                      !newPassword || value === newPassword || 'As senhas não coincidem',
                   })}
                 />
               </div>
-              {errors.confirmPassword && (
-                <p className="mt-1 text-sm text-red-600">{errors.confirmPassword.message}</p>
+              {profileErrors.confirmPassword && (
+                <p className="mt-1 text-sm text-red-600">{profileErrors.confirmPassword.message}</p>
               )}
             </div>
             
@@ -239,25 +280,25 @@ const Settings = () => {
                 className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-500 hover:bg-primary-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
               >
                 <Save className="mr-2 h-4 w-4" />
-                Save Profile
+                Salvar Perfil
               </button>
             </div>
           </form>
           
           <div className="mt-8 pt-6 border-t border-gray-200">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Account Actions</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Ações da Conta</h3>
             
             <div className="space-y-4">
               <button
                 onClick={() => logout()}
                 className="inline-flex items-center px-4 py-2 border border-red-300 rounded-md shadow-sm text-sm font-medium text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
               >
-                Log Out
+                Sair
               </button>
               
               <button
                 onClick={() => {
-                  if (confirm('Are you sure you want to delete your account? This action cannot be undone.')) {
+                  if (confirm('Tem certeza que deseja excluir sua conta? Esta ação não pode ser desfeita.')) {
                     // In a real app, this would make an API call to delete the account
                     logout();
                     navigate('/login');
@@ -265,7 +306,7 @@ const Settings = () => {
                 }}
                 className="inline-flex items-center px-4 py-2 border border-red-300 rounded-md shadow-sm text-sm font-medium text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
               >
-                Delete Account
+                Excluir Conta
               </button>
             </div>
           </div>
@@ -274,7 +315,7 @@ const Settings = () => {
       
       {activeTab === 'categories' && (
         <div className="bg-white rounded-lg shadow-sm p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Manage Categories</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Gerenciar Categorias</h2>
           
           <div className="mb-6">
             <div className="flex mb-2">
@@ -286,7 +327,7 @@ const Settings = () => {
                     : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
                 } rounded-l-md`}
               >
-                Expense Categories
+                Categorias de Despesa
               </button>
               <button
                 onClick={() => setCategoryType('income')}
@@ -296,13 +337,13 @@ const Settings = () => {
                     : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
                 } rounded-r-md`}
               >
-                Income Categories
+                Categorias de Receita
               </button>
             </div>
             
             <div className="mt-4">
               <label htmlFor="newCategory" className="block text-sm font-medium text-gray-700 mb-1">
-                Add New Category
+                Adicionar Nova Categoria
               </label>
               <div className="flex">
                 <input
@@ -311,14 +352,14 @@ const Settings = () => {
                   value={newCategoryName}
                   onChange={(e) => setNewCategoryName(e.target.value)}
                   className="flex-1 px-3 py-2 border border-gray-300 rounded-l-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                  placeholder={`New ${categoryType} category`}
+                  placeholder={`Nova categoria de ${categoryType === 'income' ? 'receita' : 'despesa'}`}
                 />
                 <button
                   onClick={handleAddCategory}
                   className="inline-flex items-center px-4 py-2 border border-transparent rounded-r-md shadow-sm text-sm font-medium text-white bg-primary-500 hover:bg-primary-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
                 >
                   <PlusCircle className="mr-2 h-4 w-4" />
-                  Add
+                  Adicionar
                 </button>
               </div>
               {error && (
@@ -330,7 +371,7 @@ const Settings = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <h3 className="text-md font-medium text-gray-900 mb-3">
-                Expense Categories
+                Categorias de Despesa
               </h3>
               <ul className="space-y-2">
                 {categories.expense.map((category) => (
@@ -354,7 +395,7 @@ const Settings = () => {
             
             <div>
               <h3 className="text-md font-medium text-gray-900 mb-3">
-                Income Categories
+                Categorias de Receita
               </h3>
               <ul className="space-y-2">
                 {categories.income.map((category) => (
@@ -381,17 +422,17 @@ const Settings = () => {
 
       {activeTab === 'preferences' && (
         <div className="bg-white rounded-lg shadow-sm p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Preferences</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Preferências</h2>
 
           {currencySaved && (
             <div className="mb-4 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-md">
-              Currency updated successfully!
+              Moeda atualizada com sucesso!
             </div>
           )}
 
           <div className="mb-6">
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Currency
+              Moeda
             </label>
             <div className="max-w-xs">
               {currencies.map((currency) => (
@@ -414,6 +455,75 @@ const Settings = () => {
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'emergency' && (
+        <div className="bg-white rounded-lg shadow-sm p-6">
+          <div className="flex items-center mb-4">
+            <ShieldCheck className="h-6 w-6 text-primary-500 mr-2" />
+            <h2 className="text-lg font-semibold text-gray-900">Reserva de Emergência</h2>
+          </div>
+
+          {emergencyFundSaved && (
+            <div className="mb-4 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-md">
+              Reserva de emergência atualizada com sucesso!
+            </div>
+          )}
+
+          <div className="mb-6">
+            <p className="text-gray-600 mb-4">
+              Configure aqui o valor da sua reserva de emergência. Este valor servirá como referência para seu planejamento financeiro.
+            </p>
+
+            <form onSubmit={handleSubmitEmergencyFund(onSubmitEmergencyFund)}>
+              <div className="mb-4">
+                <label htmlFor="emergencyFund" className="block text-sm font-medium text-gray-700 mb-1">
+                  Valor da Reserva de Emergência
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Wallet className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <input
+                    id="emergencyFund"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    className={`pl-10 block w-full border ${
+                      emergencyFundErrors.amount ? 'border-red-300' : 'border-gray-300'
+                    } rounded-md shadow-sm py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500`}
+                    {...registerEmergencyFund('amount', {
+                      required: 'Valor é obrigatório',
+                      min: { value: 0, message: 'O valor não pode ser negativo' }
+                    })}
+                  />
+                </div>
+                {emergencyFundErrors.amount && (
+                  <p className="mt-1 text-sm text-red-600">{emergencyFundErrors.amount.message}</p>
+                )}
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-500 hover:bg-primary-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+                >
+                  <Save className="mr-2 h-4 w-4" />
+                  Salvar Valor
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <div className="bg-blue-50 rounde
+d-lg p-4">
+            <h3 className="text-sm font-medium text-blue-800 mb-2">Dica</h3>
+            <p className="text-sm text-blue-600">
+              Recomenda-se manter uma reserva de emergência equivalente a 3-6 meses de despesas mensais. 
+              Isso ajuda a lidar com imprevistos financeiros sem comprometer seu orçamento regular.
+            </p>
           </div>
         </div>
       )}

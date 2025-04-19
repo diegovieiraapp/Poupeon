@@ -6,7 +6,7 @@ import { subMonths, startOfMonth, endOfMonth, format, startOfDay, endOfDay } fro
 import { ptBR } from 'date-fns/locale';
 import { Doughnut, Line } from 'react-chartjs-2';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearScale, PointElement, LineElement, Title } from 'chart.js';
-import { PlusCircle, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, DollarSign } from 'lucide-react';
+import { PlusCircle, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, DollarSign, ShieldCheck } from 'lucide-react';
 import { formatCurrency } from '../utils/currency';
 import type { CurrencyCode } from '../utils/currency';
 
@@ -132,6 +132,14 @@ const Dashboard = () => {
   }, [currentDate]);
 
   const userCurrency = (user?.currency || 'BRL') as CurrencyCode;
+
+  // Calculate emergency fund status
+  const emergencyFundTotal = user?.emergencyFund || 0;
+  const emergencyFundRemaining = Math.max(0, emergencyFundTotal - currentMonthSummary.totalExpense);
+  const emergencyFundUsed = Math.min(emergencyFundTotal, currentMonthSummary.totalExpense);
+  const emergencyFundUsedPercentage = emergencyFundTotal > 0 
+    ? (emergencyFundUsed / emergencyFundTotal) * 100 
+    : 0;
   
   return (
     <div className="py-6 fadeIn">
@@ -141,7 +149,7 @@ const Dashboard = () => {
       </div>
       
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         {/* Total Income */}
         <div className="bg-white rounded-lg shadow-sm p-6">
           <div className="flex justify-between items-start">
@@ -217,6 +225,44 @@ const Dashboard = () => {
               {Math.abs(balanceChange).toFixed(1)}% {balanceChange >= 0 ? 'aumento' : 'redução'}
             </span>
             <span className="text-xs text-gray-500 ml-1">em relação ao mês anterior</span>
+          </div>
+        </div>
+
+        {/* Emergency Fund Status */}
+        <div className="bg-white rounded-lg shadow-sm p-6">
+          <div className="flex justify-between items-start">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Reserva de Emergência</p>
+              <h3 className="text-2xl font-bold text-gray-900 mt-1">
+                {formatCurrency(emergencyFundRemaining, userCurrency)}
+              </h3>
+            </div>
+            <div className="p-2 bg-yellow-100 rounded-md">
+              <ShieldCheck className="h-5 w-5 text-yellow-600" />
+            </div>
+          </div>
+          <div className="mt-4">
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-sm text-gray-600">Utilizado</span>
+              <span className="text-sm font-medium text-gray-900">
+                {formatCurrency(emergencyFundUsed, userCurrency)}
+              </span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div 
+                className={`h-2 rounded-full ${
+                  emergencyFundUsedPercentage >= 75 
+                    ? 'bg-red-500' 
+                    : emergencyFundUsedPercentage >= 50 
+                    ? 'bg-yellow-500' 
+                    : 'bg-green-500'
+                }`}
+                style={{ width: `${emergencyFundUsedPercentage}%` }}
+              />
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              {emergencyFundUsedPercentage.toFixed(1)}% utilizado do total de {formatCurrency(emergencyFundTotal, userCurrency)}
+            </p>
           </div>
         </div>
       </div>
