@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { auth, db } from '../config/firebase';
+import { auth, db, getConnectionStatus } from '../config/firebase';
 import { 
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword,
@@ -24,18 +24,44 @@ interface AuthState {
   updateUserCurrency: (currency: string) => Promise<void>;
 }
 
+const MAX_RETRIES = 3;
+const INITIAL_RETRY_DELAY = 1000; // 1 second
+
+const retryWithExponentialBackoff = async (
+  operation: () => Promise<any>,
+  retries = MAX_RETRIES,
+  delay = INITIAL_RETRY_DELAY
+): Promise<any> => {
+  try {
+    return await operation();
+  } catch (error) {
+    if (retries === 0 || !getConnectionStatus()) throw error;
+    
+    await new Promise(resolve => setTimeout(resolve, delay));
+    return retryWithExponentialBackoff(operation, retries - 1, delay * 2);
+  }
+};
+
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   isAuthenticated: false,
   
   login: async (email: string, password: string) => {
+    if (!getConnectionStatus()) {
+      throw new Error('Sem conexão com a internet. Por favor, verifique sua conexão e tente novamente.');
+    }
+
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const { uid, displayName, email: userEmail } = userCredential.user;
       
-      // Get user data from Firestore
-      const userDoc = await getDoc(doc(db, 'users', uid));
-      const userData = userDoc.data();
+      // Get user data from Firestore with retry mechanism
+      const getUserData = async () => {
+        const userDoc = await getDoc(doc(db, 'users', uid));
+        return userDoc.data();
+      };
+      
+      const userData = await retryWithExponentialBackoff(getUserData);
       
       set({ 
         user: { 
@@ -50,11 +76,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return true;
     } catch (error) {
       console.error('Erro no login:', error);
+      if (!getConnectionStatus()) {
+        throw new Error('Sem conexão com a internet. Por favor, verifique sua conexão e tente novamente.');
+      }
       return false;
     }
   },
   
   register: async (name: string, email: string, password: string) => {
+    if (!getConnectionStatus()) {
+      throw new Error('Sem conexão com a internet. Por favor, verifique sua conexão e tente novamente.');
+    }
+
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       
@@ -62,13 +95,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         displayName: name
       });
       
-      // Criar documento do usuário no Firestore
-      await setDoc(doc(db, 'users', userCredential.user.uid), {
-        name,
-        email,
-        currency: 'BRL',
-        createdAt: new Date()
-      });
+      // Create user document in Firestore with retry mechanism
+      const createUserDoc = async () => {
+        await setDoc(doc(db, 'users', userCredential.user.uid), {
+          name,
+          email,
+          currency: 'BRL',
+          createdAt: new Date()
+        });
+      };
+      
+      await retryWithExponentialBackoff(createUserDoc);
       
       set({ 
         user: { 
@@ -83,6 +120,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return true;
     } catch (error) {
       console.error('Erro no registro:', error);
+      if (!getConnectionStatus()) {
+        throw new Error('Sem conexão com a internet. Por favor, verifique sua conexão e tente novamente.');
+      }
       return false;
     }
   },
@@ -100,11 +140,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const { user } = get();
     if (!user) return;
 
-    try {
+    if (!getConnectionStatus()) {
+      throw new Error('Sem conexão com a internet. Por favor, verifique sua conexão e tente novamente.');
+    }
+
+    const updateCurrency = async () => {
       await updateDoc(doc(db, 'users', user.id), {
         currency
       });
+    };
 
+    try {
+      await retryWithExponentialBackoff(updateCurrency);
       set(state => ({
         user: state.user ? { ...state.user, currency } : null
       }));
@@ -118,19 +165,43 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 // Observador de mudanças na autenticação
 auth.onAuthStateChanged(async (user) => {
   if (user) {
-    // Get user data from Firestore
-    const userDoc = await getDoc(doc(db, 'users', user.uid));
-    const userData = userDoc.data();
+    // Set basic user data immediately
+    const basicUserData = {
+      id: user.uid,
+      name: user.displayName || 'Usuário',
+      email: user.email || '',
+      currency: 'BRL'
+    };
 
-    useAuthStore.setState({ 
-      user: { 
-        id: user.uid, 
-        name: user.displayName || 'Usuário', 
-        email: user.email || '',
-        currency: userData?.currency || 'BRL'
-      }, 
-      isAuthenticated: true 
+    // Set initial state with basic data
+    useAuthStore.setState({
+      user: basicUserData,
+      isAuthenticated: true
     });
+
+    // Only attempt to fetch additional data if online
+    if (getConnectionStatus()) {
+      try {
+        const getUserData = async () => {
+          const userDoc = await getDoc(doc(db, 'users', user.uid));
+          return userDoc.data();
+        };
+
+        const userData = await retryWithExponentialBackoff(getUserData);
+
+        // Update state with Firestore data if fetch was successful
+        useAuthStore.setState({
+          user: {
+            ...basicUserData,
+            currency: userData?.currency || 'BRL'
+          },
+          isAuthenticated: true
+        });
+      } catch (error) {
+        console.error('Error fetching user data:', error);
+        // State already set with basic data, so no need to set again
+      }
+    }
   } else {
     useAuthStore.setState({ user: null, isAuthenticated: false });
   }

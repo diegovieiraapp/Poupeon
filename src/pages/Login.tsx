@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useAuthStore } from '../store/authStore';
-import { Wallet, Lock, Mail, AlertCircle } from 'lucide-react';
+import { Wallet, Lock, Mail, AlertCircle, WifiOff } from 'lucide-react';
+import { getConnectionStatus } from '../config/firebase';
 
 interface LoginFormData {
   email: string;
@@ -22,6 +23,11 @@ const Login = () => {
   } = useForm<LoginFormData>();
   
   const onSubmit = async (data: LoginFormData) => {
+    if (!getConnectionStatus()) {
+      setError('Sem conexão com a internet. Por favor, verifique sua conexão e tente novamente.');
+      return;
+    }
+
     setIsLoading(true);
     setError('');
     
@@ -34,7 +40,11 @@ const Login = () => {
         setError('Email ou senha inválidos');
       }
     } catch (err) {
-      setError('Ocorreu um erro. Por favor, tente novamente.');
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Ocorreu um erro. Por favor, tente novamente.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -58,6 +68,13 @@ const Login = () => {
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
+          {!getConnectionStatus() && (
+            <div className="mb-4 bg-yellow-50 border border-yellow-200 text-yellow-700 px-4 py-3 rounded-md flex items-start">
+              <WifiOff className="h-5 w-5 mr-2 flex-shrink-0" />
+              <span>Você está offline. Algumas funcionalidades podem estar indisponíveis.</span>
+            </div>
+          )}
+          
           {error && (
             <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md flex items-start">
               <AlertCircle className="h-5 w-5 mr-2 flex-shrink-0" />
@@ -121,7 +138,7 @@ const Login = () => {
             <div>
               <button
                 type="submit"
-                disabled={isLoading}
+                disabled={isLoading || !getConnectionStatus()}
                 className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-500 hover:bg-primary-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-70"
               >
                 {isLoading ? 'Entrando...' : 'Entrar'}
