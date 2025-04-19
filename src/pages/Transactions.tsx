@@ -15,6 +15,8 @@ import {
   ArrowDown,
   Repeat
 } from 'lucide-react';
+import { formatCurrency } from '../utils/currency';
+import type { CurrencyCode } from '../utils/currency';
 
 type SortField = 'date' | 'description' | 'category' | 'amount';
 type SortDirection = 'asc' | 'desc';
@@ -203,10 +205,12 @@ const Transactions = () => {
       <ArrowDown className="inline-block h-4 w-4 ml-1" />
     );
   };
+
+  const userCurrency = (user?.currency || 'BRL') as CurrencyCode;
   
   const formatAmount = (amount: number | string): string => {
     const numAmount = Number(amount);
-    return isNaN(numAmount) ? '0,00' : numAmount.toFixed(2);
+    return formatCurrency(numAmount, userCurrency);
   };
 
   const getRecurrenceText = (transaction: Transaction) => {
@@ -571,7 +575,7 @@ const Transactions = () => {
                     <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium text-right ${
                       transaction.type === 'income' ? 'text-green-600' : 'text-red-600'
                     }`}>
-                      {transaction.type === 'income' ? '+' : '-'}R$ {formatAmount(transaction.amount)}
+                      {transaction.type === 'income' ? '+' : '-'}{formatAmount(transaction.amount)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <button
