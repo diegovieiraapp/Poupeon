@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAuthStore } from '../store/authStore';
-import { useTransactionStore, Transaction, TransactionType, RecurrenceType } from '../store/transactionStore';
+import { useTransactionStore, Transaction, TransactionType, PaymentStatus } from '../store/transactionStore';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useForm } from 'react-hook-form';
@@ -13,7 +13,8 @@ import {
   X,
   ArrowUp,
   ArrowDown,
-  Repeat
+  CheckCircle,
+  XCircle
 } from 'lucide-react';
 import { formatCurrency } from '../utils/currency';
 import type { CurrencyCode } from '../utils/currency';
@@ -32,20 +33,8 @@ interface TransactionFormData {
   category: string;
   date: string;
   type: TransactionType;
-  recurrence: RecurrenceType;
-  recurrenceDay?: number;
-  weekDay?: number;
+  status: PaymentStatus;
 }
-
-const weekDays = [
-  { value: 0, label: 'Domingo' },
-  { value: 1, label: 'Segunda-feira' },
-  { value: 2, label: 'Terça-feira' },
-  { value: 3, label: 'Quarta-feira' },
-  { value: 4, label: 'Quinta-feira' },
-  { value: 5, label: 'Sexta-feira' },
-  { value: 6, label: 'Sábado' }
-];
 
 const Transactions = () => {
   const { user } = useAuthStore();
@@ -55,12 +44,13 @@ const Transactions = () => {
     addTransaction,
     updateTransaction,
     deleteTransaction,
+    toggleTransactionStatus,
     addCategory
   } = useTransactionStore();
   
   const [isAddingTransaction, setIsAddingTransaction] = useState(false);
   const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null);
-  const [filter, setFilter] = useState<{type?: TransactionType, search?: string, recurrence?: RecurrenceType}>({});
+  const [filter, setFilter] = useState<{type?: TransactionType, search?: string, status?: PaymentStatus}>({});
   const [sortConfig, setSortConfig] = useState<SortConfig>({ field: 'date', direction: 'desc' });
   const [newCategory, setNewCategory] = useState('');
   const [showCategoryInput, setShowCategoryInput] = useState(false);
@@ -69,7 +59,6 @@ const Transactions = () => {
     register, 
     handleSubmit, 
     reset,
-    control,
     formState: { errors },
     setValue,
     watch
@@ -80,12 +69,11 @@ const Transactions = () => {
       category: '',
       date: format(new Date(), 'yyyy-MM-dd'),
       type: 'expense',
-      recurrence: 'none'
+      status: 'pending'
     }
   });
   
   const selectedType = watch('type');
-  const selectedRecurrence = watch('recurrence');
   
   // Filter transactions for current user
   const userTransactions = transactions.filter(t => t.userId === user?.id);
@@ -96,7 +84,7 @@ const Transactions = () => {
       return false;
     }
     
-    if (filter.recurrence && transaction.recurrence !== filter.recurrence) {
+    if (filter.status && transaction.status !== filter.status) {
       return false;
     }
     
@@ -145,9 +133,7 @@ const Transactions = () => {
     
     const transactionData = {
       ...data,
-      amount: Number(data.amount),
-      recurrenceDay: data.recurrence === 'monthly' ? new Date(data.date).getDate() : undefined,
-      weekDay: data.recurrence === 'weekly' ? new Date(data.date).getDay() : undefined
+      amount: Number(data.amount)
     };
     
     if (editingTransactionId) {
@@ -170,13 +156,7 @@ const Transactions = () => {
     setValue('category', transaction.category);
     setValue('date', transaction.date);
     setValue('type', transaction.type);
-    setValue('recurrence', transaction.recurrence || 'none');
-    if (transaction.recurrenceDay) {
-      setValue('recurrenceDay', transaction.recurrenceDay);
-    }
-    if (transaction.weekDay !== undefined) {
-      setValue('weekDay', transaction.weekDay);
-    }
+    setValue('status', transaction.status || 'pending');
     
     setEditingTransactionId(transaction.id);
     setIsAddingTransaction(true);
@@ -211,15 +191,6 @@ const Transactions = () => {
   const formatAmount = (amount: number | string): string => {
     const numAmount = Number(amount);
     return formatCurrency(numAmount, userCurrency);
-  };
-
-  const getRecurrenceText = (transaction: Transaction) => {
-    if (transaction.recurrence === 'weekly' && transaction.weekDay !== undefined) {
-      return `Semanal (${weekDays[transaction.weekDay].label})`;
-    } else if (transaction.recurrence === 'monthly' && transaction.recurrenceDay) {
-      return `Mensal (Dia ${transaction.recurrenceDay})`;
-    }
-    return 'Única vez';
   };
   
   return (
@@ -334,42 +305,20 @@ const Transactions = () => {
               </div>
 
               <div>
-                <label htmlFor="recurrence" className="block text-sm font-medium text-gray-700 mb-1">
-                  Recorrência
+                <label htmlFor="status" className="block text-sm font-medium text-gray-700 mb-1">
+                  Status
                 </label>
                 <select
-                  id="recurrence"
+                  id="status"
                   className={`w-full px-3 py-2 border ${
-                    errors.recurrence ? 'border-red-300' : 'border-gray-300'
+                    errors.status ? 'border-red-300' : 'border-gray-300'
                   } rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500`}
-                  {...register('recurrence')}
+                  {...register('status')}
                 >
-                  <option value="none">Única vez</option>
-                  <option value="weekly">Semanal</option>
-                  <option value="monthly">Mensal</option>
+                  <option value="pending">Pendente</option>
+                  <option value="paid">Pago</option>
                 </select>
               </div>
-
-              {selectedRecurrence === 'weekly' && (
-                <div>
-                  <label htmlFor="weekDay" className="block text-sm font-medium text-gray-700 mb-1">
-                    Dia da Semana
-                  </label>
-                  <select
-                    id="weekDay"
-                    className={`w-full px-3 py-2 border ${
-                      errors.weekDay ? 'border-red-300' : 'border-gray-300'
-                    } rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500`}
-                    {...register('weekDay')}
-                  >
-                    {weekDays.map(day => (
-                      <option key={day.value} value={day.value}>
-                        {day.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
               
               <div className="md:col-span-2">
                 <div className="flex justify-between">
@@ -473,16 +422,15 @@ const Transactions = () => {
           </div>
 
           <div className="flex items-center mb-4 md:mb-0">
-            <Repeat className="h-5 w-5 text-gray-400 mr-2" />
+            <CheckCircle className="h-5 w-5 text-gray-400 mr-2" />
             <select
-              value={filter.recurrence || ''}
-              onChange={(e) => setFilter({ ...filter, recurrence: e.target.value as RecurrenceType || undefined })}
+              value={filter.status || ''}
+              onChange={(e) => setFilter({ ...filter, status: e.target.value as PaymentStatus || undefined })}
               className="px-3 py-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
             >
-              <option value="">Todas as Recorrências</option>
-              <option value="none">Única vez</option>
-              <option value="weekly">Semanal</option>
-              <option value="monthly">Mensal</option>
+              <option value="">Todos os Status</option>
+              <option value="pending">Pendente</option>
+              <option value="paid">Pago</option>
             </select>
           </div>
           
@@ -533,7 +481,7 @@ const Transactions = () => {
                     </span>
                   </th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Recorrência
+                    Status
                   </th>
                   <th 
                     scope="col" 
@@ -556,6 +504,7 @@ const Transactions = () => {
                       {format(new Date(transaction.date), 'dd/MM/yyyy')}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      
                       {transaction.description}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -564,13 +513,21 @@ const Transactions = () => {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        transaction.recurrence === 'none' 
-                          ? 'bg-gray-100 text-gray-800'
-                          : 'bg-blue-100 text-blue-800'
-                      }`}>
-                        {getRecurrenceText(transaction)}
-                      </span>
+                      <button
+                        onClick={() => toggleTransactionStatus(transaction.id)}
+                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          transaction.status === 'paid'
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-yellow-100 text-yellow-800'
+                        }`}
+                      >
+                        {transaction.status === 'paid' ? (
+                          <CheckCircle className="h-4 w-4 mr-1" />
+                        ) : (
+                          <XCircle className="h-4 w-4 mr-1" />
+                        )}
+                        {transaction.status === 'paid' ? 'Pago' : 'Pendente'}
+                      </button>
                     </td>
                     <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium text-right ${
                       transaction.type === 'income' ? 'text-green-600' : 'text-red-600'

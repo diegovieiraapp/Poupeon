@@ -17,12 +17,18 @@ import {
   parseISO
 } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, Plus, Repeat } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Repeat } from 'lucide-react';
 import { formatCurrency } from '../utils/currency';
 
 const Calendar = () => {
   const { user } = useAuthStore();
-  const { getTransactionsByDateRange } = useTransactionStore();
+  const { 
+    transactions,
+    getSummary,
+    getTransactionsByDateRange,
+    getTransactionsByMonth
+  } = useTransactionStore();
+  
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
 
@@ -36,7 +42,7 @@ const Calendar = () => {
   const calendarDays = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
 
   // Get transactions for the entire calendar view
-  const transactions = getTransactionsByDateRange(calendarStart, calendarEnd);
+  const calendarTransactions = getTransactionsByDateRange(calendarStart, calendarEnd);
 
   // Navigation handlers
   const nextMonth = () => setCurrentMonth(addMonths(currentMonth, 1));
@@ -48,7 +54,7 @@ const Calendar = () => {
 
   // Get transactions for a specific day
   const getTransactionsForDay = (day: Date) => {
-    return transactions.filter(t => isSameDay(new Date(t.date), day));
+    return calendarTransactions.filter(t => isSameDay(new Date(t.date), day));
   };
 
   // Calculate day summary
@@ -230,9 +236,6 @@ const Calendar = () => {
                             <p className="text-sm font-medium text-gray-900">
                               {transaction.description}
                             </p>
-                            {transaction.recurrence !== 'none' && (
-                              <Repeat className="h-4 w-4 ml-1 text-blue-500" />
-                            )}
                           </div>
                           <p className="text-xs text-gray-500">
                             {transaction.category}
@@ -250,14 +253,7 @@ const Calendar = () => {
                 </div>
               ) : (
                 <div className="text-center py-6 border border-gray-200 rounded-md">
-                  <p className="text-gray-500 text-sm mb-3">Nenhuma transação para este dia</p>
-                  <a
-                    href="/transactions"
-                    className="inline-flex items-center text-sm text-primary-600 hover:text-primary-800"
-                  >
-                    <Plus className="h-4 w-4 mr-1" />
-                    Adicionar transação
-                  </a>
+                  <p className="text-gray-500 text-sm">Nenhuma transação para este dia</p>
                 </div>
               )}
             </>
