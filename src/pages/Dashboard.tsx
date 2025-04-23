@@ -25,28 +25,22 @@ const Dashboard = () => {
   const [currentDate] = useState(new Date());
   const [periodLabel, setPeriodLabel] = useState('');
   
-  // Buscar transações quando o componente montar
   useEffect(() => {
     if (user) {
       fetchTransactions(user.id);
     }
   }, [user]);
   
-  // Get current month range
   const currentMonthStart = startOfMonth(currentDate);
   const currentMonthEnd = endOfMonth(currentDate);
   
-  // Get previous month range
   const prevMonthStart = startOfMonth(subMonths(currentDate, 1));
   const prevMonthEnd = endOfMonth(subMonths(currentDate, 1));
   
-  // Get financial summary for current month
   const currentMonthSummary = getSummary(currentMonthStart, currentMonthEnd);
   
-  // Get financial summary for previous month
   const prevMonthSummary = getSummary(prevMonthStart, prevMonthEnd);
   
-  // Calculate percentage changes
   const incomeChange = prevMonthSummary.totalIncome !== 0
     ? ((currentMonthSummary.totalIncome - prevMonthSummary.totalIncome) / prevMonthSummary.totalIncome) * 100
     : 0;
@@ -59,13 +53,11 @@ const Dashboard = () => {
     ? ((currentMonthSummary.balance - prevMonthSummary.balance) / Math.abs(prevMonthSummary.balance)) * 100
     : 0;
   
-  // Get recent transactions (excluding future recurring transactions)
   const today = endOfDay(new Date());
   const recentTransactions = getTransactionsByDateRange(startOfMonth(subMonths(today, 1)), today)
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     .slice(0, 5);
   
-  // Prepare data for expenses by category chart
   const expenseCategoriesData = {
     labels: Object.keys(currentMonthSummary.byCategoryExpense),
     datasets: [
@@ -87,7 +79,6 @@ const Dashboard = () => {
     ],
   };
   
-  // Prepare data for last 6 months income/expense chart
   const last6MonthsData = () => {
     const labels = [];
     const incomeData = [];
@@ -133,13 +124,31 @@ const Dashboard = () => {
 
   const userCurrency = (user?.currency || 'BRL') as CurrencyCode;
 
-  // Calculate emergency fund status
-  const emergencyFundTotal = user?.emergencyFund || 0;
-  const emergencyFundRemaining = Math.max(0, emergencyFundTotal - currentMonthSummary.totalExpense);
-  const emergencyFundUsed = Math.min(emergencyFundTotal, currentMonthSummary.totalExpense);
-  const emergencyFundUsedPercentage = emergencyFundTotal > 0 
-    ? (emergencyFundUsed / emergencyFundTotal) * 100 
-    : 0;
+const emergencyFundTotal = user?.emergencyFund || 0;
+const income = currentMonthSummary.totalIncome || 0;
+const expenses = currentMonthSummary.totalExpense || 0;
+const balance = income - expenses;
+
+let emergencyFundUsed = 0;
+let emergencyFundRemaining = 0;
+
+if (income < expenses) {
+  // Usa a reserva para cobrir o que faltar
+  const deficit = expenses - income;
+  emergencyFundUsed = Math.min(deficit, emergencyFundTotal);
+  emergencyFundRemaining = emergencyFundTotal - emergencyFundUsed;
+} else {
+  // Reposição: só se algo tiver sido usado
+  const previousUsed = currentMonthSummary.emergencyFundUsed || 0;
+  const replenish = Math.min(income - expenses, previousUsed);
+  emergencyFundUsed = Math.max(0, previousUsed - replenish);
+  emergencyFundRemaining = emergencyFundTotal - emergencyFundUsed;
+}
+
+const emergencyFundUsedPercentage = emergencyFundTotal > 0
+  ? (emergencyFundUsed / emergencyFundTotal) * 100
+  : 0;
+
   
   return (
     <div className="py-6 fadeIn">
@@ -148,9 +157,7 @@ const Dashboard = () => {
         <p className="text-gray-600">Bem-vindo de volta, {user?.name}!</p>
       </div>
       
-      {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-        {/* Total Income */}
         <div className="bg-white rounded-lg shadow-sm p-6">
           <div className="flex justify-between items-start">
             <div>
@@ -176,7 +183,6 @@ const Dashboard = () => {
           </div>
         </div>
         
-        {/* Total Expenses */}
         <div className="bg-white rounded-lg shadow-sm p-6">
           <div className="flex justify-between items-start">
             <div>
@@ -202,7 +208,6 @@ const Dashboard = () => {
           </div>
         </div>
         
-        {/* Current Balance */}
         <div className="bg-white rounded-lg shadow-sm p-6">
           <div className="flex justify-between items-start">
             <div>
@@ -228,7 +233,6 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Emergency Fund Status */}
         <div className="bg-white rounded-lg shadow-sm p-6">
           <div className="flex justify-between items-start">
             <div>
@@ -267,9 +271,7 @@ const Dashboard = () => {
         </div>
       </div>
       
-      {/* Charts and Recent Transactions */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-        {/* Line Chart - Income vs Expenses */}
         <div className="md:col-span-8 bg-white rounded-lg shadow-sm p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">
             Receitas vs Despesas <span className="text-sm font-normal text-gray-500">Últimos 6 Meses</span>
@@ -305,7 +307,6 @@ const Dashboard = () => {
           </div>
         </div>
         
-        {/* Expense By Category - Doughnut Chart */}
         <div className="md:col-span-4 bg-white rounded-lg shadow-sm p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">
             Despesas por Categoria <span className="text-sm font-normal text-gray-500">{periodLabel}</span>
@@ -335,7 +336,6 @@ const Dashboard = () => {
           </div>
         </div>
         
-        {/* Recent Transactions */}
         <div className="md:col-span-12 bg-white rounded-lg shadow-sm p-6">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-lg font-semibold text-gray-900">Transações Recentes</h3>

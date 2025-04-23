@@ -69,11 +69,11 @@ interface TransactionState {
     balance: number;
     byCategoryIncome: { [category: string]: number };
     byCategoryExpense: { [category: string]: number };
+    emergencyFundUsed: number;
   };
 }
 
 const normalizeDate = (dateString: string): string => {
-  // Ajusta a data para meio-dia no fuso horário local para evitar problemas com UTC
   const date = new Date(dateString);
   date.setHours(12, 0, 0, 0);
   return format(date, 'yyyy-MM-dd');
@@ -86,6 +86,17 @@ const createRecurrentDate = (baseDate: Date, recurrenceDay: number): Date => {
   date.setDate(actualDay);
   date.setHours(12, 0, 0, 0);
   return date;
+};
+
+const updateEmergencyFund = async (userId: string, currentBalance: number) => {
+  const userRef = doc(db, 'users', userId);
+  const userDoc = await getDocs(query(collection(db, 'users'), where('id', '==', userId)));
+  const userData = userDoc.docs[0]?.data();
+
+  if (userData?.emergencyFund !== undefined) {
+    const newEmergencyFund = userData.emergencyFund + currentBalance;
+    await updateDoc(userRef, { emergencyFund: newEmergencyFund });
+  }
 };
 
 export const useTransactionStore = create<TransactionState>((set, get) => ({
@@ -157,6 +168,13 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
       };
 
       await addDoc(collection(db, 'transactions'), transactionData);
+
+      const currentDate = new Date();
+      const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+      const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+      const summary = get().getSummary(startOfMonth, endOfMonth);
+
+      await updateEmergencyFund(transaction.userId, summary.balance);
     } catch (error) {
       console.error('Erro ao adicionar transação:', error);
     } finally {
@@ -193,7 +211,6 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
         updates.recurrenceDay = null;
       }
 
-      // Remove undefined values
       Object.keys(updates).forEach(key => {
         if (updates[key] === undefined) {
           delete updates[key];
@@ -201,7 +218,19 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
       });
 
       const transactionRef = doc(db, 'transactions', id);
+      const transactionDoc = await getDocs(query(collection(db, 'transactions'), where('id', '==', id)));
+      const userId = transactionDoc.docs[0]?.data().userId;
+
       await updateDoc(transactionRef, updates);
+
+      if (userId) {
+        const currentDate = new Date();
+        const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+        const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+        const summary = get().getSummary(startOfMonth, endOfMonth);
+
+        await updateEmergencyFund(userId, summary.balance);
+      }
     } catch (error) {
       console.error('Erro ao atualizar transação:', error);
     } finally {
@@ -212,7 +241,20 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
   deleteTransaction: async (id) => {
     try {
       set({ isLoading: true });
+      
+      const transactionDoc = await getDocs(query(collection(db, 'transactions'), where('id', '==', id)));
+      const userId = transactionDoc.docs[0]?.data().userId;
+      
       await deleteDoc(doc(db, 'transactions', id));
+
+      if (userId) {
+        const currentDate = new Date();
+        const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+        const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+        const summary = get().getSummary(startOfMonth, endOfMonth);
+
+        await updateEmergencyFund(userId, summary.balance);
+      }
     } catch (error) {
       console.error('Erro ao deletar transação:', error);
     } finally {
@@ -241,7 +283,6 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
       const transactionDate = new Date(t.date);
       transactionDate.setHours(12, 0, 0, 0);
 
-      // Para transações não recorrentes
       if (t.recurrence === 'none') {
         if (isSameDay(transactionDate, start) || isSameDay(transactionDate, end) || 
             (isAfter(transactionDate, start) && isBefore(transactionDate, end))) {
@@ -250,10 +291,8 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
         return;
       }
 
-      // Data inicial da recorrência
       const transactionStart = transactionDate;
       
-      // Para transações semanais
       if (t.recurrence === 'weekly' && t.weekDay !== null) {
         const weeks = eachWeekOfInterval({ start, end });
         weeks.forEach(week => {
@@ -271,7 +310,6 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
           }
         });
       }
-      // Para transações mensais
       else if (t.recurrence === 'monthly' && t.recurrenceDay !== null) {
         const months = eachMonthOfInterval({ start, end });
         months.forEach(month => {
@@ -316,6 +354,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
     
     let totalIncome = 0;
     let totalExpense = 0;
+    let emergencyFundUsed = 0;
     const byCategoryIncome: { [category: string]: number } = {};
     const byCategoryExpense: { [category: string]: number } = {};
     
@@ -329,13 +368,26 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
         byCategoryExpense[t.category] = (byCategoryExpense[t.category] || 0) + amount;
       }
     });
+
+    const balance = totalIncome - totalExpense;
+    
+    if (transactions.length > 0) {
+      const userDoc = getDocs(query(collection(db, 'users'), where('id', '==', transactions[0]?.userId)));
+      userDoc.then(doc => {
+        const userData = doc.docs[0]?.data();
+        if (userData?.emergencyFund !== undefined) {
+          emergencyFundUsed = userData.emergencyFund + balance;
+        }
+      });
+    }
     
     return {
       totalIncome,
       totalExpense,
-      balance: totalIncome - totalExpense,
+      balance,
       byCategoryIncome,
       byCategoryExpense,
+      emergencyFundUsed
     };
   },
 }));
