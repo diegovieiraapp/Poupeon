@@ -54,7 +54,10 @@ const Calendar = () => {
 
   // Get transactions for a specific day
   const getTransactionsForDay = (day: Date) => {
-    return calendarTransactions.filter(t => isSameDay(new Date(t.date), day));
+    return calendarTransactions.filter(t => {
+      const transactionDate = parseISO(t.date);
+      return isSameDay(transactionDate, day);
+    });
   };
 
   // Calculate day summary

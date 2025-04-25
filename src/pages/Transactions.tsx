@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { useTransactionStore, Transaction, TransactionType, PaymentStatus } from '../store/transactionStore';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useForm } from 'react-hook-form';
 import { 
@@ -105,7 +105,7 @@ const Transactions = () => {
     
     switch (sortConfig.field) {
       case 'date':
-        comparison = new Date(a.date).getTime() - new Date(b.date).getTime();
+        comparison = parseISO(b.date).getTime() - parseISO(a.date).getTime();
         break;
       case 'description':
         comparison = a.description.localeCompare(b.description);
@@ -118,7 +118,7 @@ const Transactions = () => {
         break;
     }
     
-    return sortConfig.direction === 'asc' ? comparison : -comparison;
+    return sortConfig.direction === 'asc' ? -comparison : comparison;
   });
   
   const handleSort = (field: SortField) => {
@@ -501,10 +501,9 @@ const Transactions = () => {
                 {sortedTransactions.map((transaction) => (
                   <tr key={transaction.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {format(new Date(transaction.date), 'dd/MM/yyyy')}
+                      {format(parseISO(transaction.date), 'dd/MM/yyyy')}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      
                       {transaction.description}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">

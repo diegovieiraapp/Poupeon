@@ -19,7 +19,8 @@ import {
   endOfDay, 
   isBefore, 
   isAfter, 
-  isSameDay
+  isSameDay,
+  parseISO
 } from 'date-fns';
 
 export type TransactionType = 'income' | 'expense';
@@ -31,7 +32,7 @@ export interface Transaction {
   amount: number;
   description: string;
   category: string;
-  date: string;
+  date: string; // Format: "yyyy-MM-dd"
   type: TransactionType;
   status: PaymentStatus;
   createdAt?: Timestamp;
@@ -58,12 +59,6 @@ interface TransactionState {
   };
 }
 
-const normalizeDate = (dateString: string): string => {
-  const date = new Date(dateString);
-  date.setHours(12, 0, 0, 0);
-  return format(date, 'yyyy-MM-dd');
-};
-
 export const useTransactionStore = create<TransactionState>((set, get) => ({
   transactions: [],
   isLoading: false,
@@ -85,19 +80,12 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
       
       const unsubscribe = onSnapshot(q, {
         next: (querySnapshot) => {
-          const transactions = querySnapshot.docs.map(doc => {
-            const data = doc.data();
-            const date = new Date(data.date);
-            date.setHours(12, 0, 0, 0);
-            
-            return {
-              id: doc.id,
-              ...data,
-              amount: Number(data.amount) || 0,
-              date: format(date, 'yyyy-MM-dd'),
-              status: data.status || 'pending',
-            } as Transaction;
-          });
+          const transactions = querySnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            amount: Number(doc.data().amount) || 0,
+            status: doc.data().status || 'pending',
+          } as Transaction));
           
           set({ transactions, isLoading: false });
         },
@@ -118,14 +106,9 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
     try {
       set({ isLoading: true });
       
-      const date = new Date(transaction.date);
-      date.setHours(12, 0, 0, 0);
-      
       const transactionData = {
         ...transaction,
         amount: Number(transaction.amount),
-        date: format(date, 'yyyy-MM-dd'),
-        status: transaction.status || 'pending',
         createdAt: Timestamp.now(),
       };
 
@@ -146,12 +129,6 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
         amount: updatedFields.amount ? Number(updatedFields.amount) : undefined,
         updatedAt: Timestamp.now()
       };
-
-      if (updatedFields.date) {
-        const date = new Date(updatedFields.date);
-        date.setHours(12, 0, 0, 0);
-        updates.date = format(date, 'yyyy-MM-dd');
-      }
 
       Object.keys(updates).forEach(key => {
         if (updates[key] === undefined) {
@@ -212,30 +189,26 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
     const end = endOfDay(endDate);
     
     return transactions.filter(t => {
-      const transactionDate = new Date(t.date);
-      transactionDate.setHours(12, 0, 0, 0);
-      
-      return isSameDay(transactionDate, start) || 
-             isSameDay(transactionDate, end) || 
-             (isAfter(transactionDate, start) && isBefore(transactionDate, end));
+      const transactionDate = parseISO(t.date);
+      return (
+        isSameDay(transactionDate, start) || 
+        isSameDay(transactionDate, end) || 
+        (isAfter(transactionDate, start) && isBefore(transactionDate, end))
+      );
     }).sort((a, b) => {
-      const dateA = new Date(a.date);
-      const dateB = new Date(b.date);
-      dateA.setHours(12, 0, 0, 0);
-      dateB.setHours(12, 0, 0, 0);
+      const dateA = parseISO(a.date);
+      const dateB = parseISO(b.date);
       return dateB.getTime() - dateA.getTime();
     });
   },
   
-  getTransactionsByMonth: (year, month) => {
+  getTransactionsByMonth: (year: number, month: number) => {
     const startDate = new Date(year, month, 1);
     const endDate = new Date(year, month + 1, 0);
-    startDate.setHours(12, 0, 0, 0);
-    endDate.setHours(12, 0, 0, 0);
     return get().getTransactionsByDateRange(startDate, endDate);
   },
   
-  getSummary: (startDate, endDate) => {
+  getSummary: (startDate: Date, endDate: Date) => {
     const transactions = get().getTransactionsByDateRange(startDate, endDate)
       .filter(t => t.status === 'paid');
     
