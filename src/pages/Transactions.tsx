@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useAuthStore } from '../store/authStore';
-import { useTransactionStore, Transaction, TransactionType, PaymentStatus } from '../store/transactionStore';
-import { format, parseISO } from 'date-fns';
+import { useTransactionStore, Transaction, TransactionType, PaymentStatus, RecurrenceType } from '../store/transactionStore';
+import { format, parseISO, addYears } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useForm } from 'react-hook-form';
 import { 
@@ -14,7 +14,8 @@ import {
   ArrowUp,
   ArrowDown,
   CheckCircle,
-  XCircle
+  XCircle,
+  Repeat
 } from 'lucide-react';
 import { formatCurrency } from '../utils/currency';
 import type { CurrencyCode } from '../utils/currency';
@@ -34,6 +35,11 @@ interface TransactionFormData {
   date: string;
   type: TransactionType;
   status: PaymentStatus;
+  recurrence: {
+    type: RecurrenceType;
+    dayOfMonth?: number;
+    endDate?: string;
+  };
 }
 
 const Transactions = () => {
@@ -69,11 +75,15 @@ const Transactions = () => {
       category: '',
       date: format(new Date(), 'yyyy-MM-dd'),
       type: 'expense',
-      status: 'pending'
+      status: 'pending',
+      recurrence: {
+        type: 'none'
+      }
     }
   });
   
   const selectedType = watch('type');
+  const recurrenceType = watch('recurrence.type');
   
   // Filter transactions for current user
   const userTransactions = transactions.filter(t => t.userId === user?.id);
@@ -133,7 +143,16 @@ const Transactions = () => {
     
     const transactionData = {
       ...data,
-      amount: Number(data.amount)
+      amount: Number(data.amount),
+      recurrence: {
+        ...data.recurrence,
+        dayOfMonth: data.recurrence.type === 'monthly' 
+          ? new Date(data.date).getDate()
+          : undefined,
+        endDate: data.recurrence.type === 'monthly'
+          ? format(addYears(new Date(data.date), 1), 'yyyy-MM-dd')
+          : undefined
+      }
     };
     
     if (editingTransactionId) {
@@ -157,6 +176,7 @@ const Transactions = () => {
     setValue('date', transaction.date);
     setValue('type', transaction.type);
     setValue('status', transaction.status || 'pending');
+    setValue('recurrence', transaction.recurrence || { type: 'none' });
     
     setEditingTransactionId(transaction.id);
     setIsAddingTransaction(true);
@@ -319,6 +339,30 @@ const Transactions = () => {
                   <option value="paid">Pago</option>
                 </select>
               </div>
+
+              <div>
+                <label htmlFor="recurrence.type" className="block text-sm font-medium text-gray-700 mb-1">
+                  Recorrência
+                </label>
+                <div className="flex items-center space-x-2">
+                  <select
+                    id="recurrence.type"
+                    className={`w-full px-3 py-2 border ${
+                      errors.recurrence?.type ? 'border-red-300' : 'border-gray-300'
+                    } rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500`}
+                    {...register('recurrence.type')}
+                  >
+                    <option value="none">Não recorrente</option>
+                    <option value="monthly">Mensal</option>
+                  </select>
+                  {recurrenceType === 'monthly' && (
+                    <div className="flex items-center bg-blue-50 px-2 py-1 rounded-md">
+                      <Repeat className="h-4 w-4 text-blue-500 mr-1" />
+                      <span className="text-xs text-blue-700">Mensal</span>
+                    </div>
+                  )}
+                </div>
+              </div>
               
               <div className="md:col-span-2">
                 <div className="flex justify-between">
@@ -468,7 +512,8 @@ const Transactions = () => {
                     onClick={() => handleSort('description')}
                   >
                     <span className="flex items-center">
-                      Descrição {getSortIcon('description')}
+                      Descri
+ção {getSortIcon('description')}
                     </span>
                   </th>
                   <th 
@@ -501,7 +546,12 @@ const Transactions = () => {
                 {sortedTransactions.map((transaction) => (
                   <tr key={transaction.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {format(parseISO(transaction.date), 'dd/MM/yyyy')}
+                      <div className="flex items-center">
+                        {format(parseISO(transaction.date), 'dd/MM/yyyy')}
+                        {transaction.recurrence?.type === 'monthly' && (
+                          <Repeat className="h-4 w-4 text-blue-500 ml-2" title="Transação Recorrente" />
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {transaction.description}

@@ -20,11 +20,13 @@ import {
   isBefore, 
   isAfter, 
   isSameDay,
-  parseISO
+  parseISO,
+  addMonths
 } from 'date-fns';
 
 export type TransactionType = 'income' | 'expense';
 export type PaymentStatus = 'pending' | 'paid';
+export type RecurrenceType = 'none' | 'monthly';
 
 export interface Transaction {
   id: string;
@@ -35,6 +37,11 @@ export interface Transaction {
   date: string; // Format: "yyyy-MM-dd"
   type: TransactionType;
   status: PaymentStatus;
+  recurrence: {
+    type: RecurrenceType;
+    dayOfMonth?: number;
+    endDate?: string;
+  };
   createdAt?: Timestamp;
 }
 
@@ -85,6 +92,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
             ...doc.data(),
             amount: Number(doc.data().amount) || 0,
             status: doc.data().status || 'pending',
+            recurrence: doc.data().recurrence || { type: 'none' },
           } as Transaction));
           
           set({ transactions, isLoading: false });
@@ -112,7 +120,23 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
         createdAt: Timestamp.now(),
       };
 
-      await addDoc(collection(db, 'transactions'), transactionData);
+      // If it's a recurring transaction, create future instances
+      if (transaction.recurrence.type === 'monthly') {
+        const startDate = parseISO(transaction.date);
+        const endDate = transaction.recurrence.endDate ? parseISO(transaction.recurrence.endDate) : addMonths(startDate, 12);
+        let currentDate = startDate;
+
+        while (isBefore(currentDate, endDate)) {
+          const currentTransactionData = {
+            ...transactionData,
+            date: format(currentDate, 'yyyy-MM-dd'),
+          };
+          await addDoc(collection(db, 'transactions'), currentTransactionData);
+          currentDate = addMonths(currentDate, 1);
+        }
+      } else {
+        await addDoc(collection(db, 'transactions'), transactionData);
+      }
     } catch (error) {
       console.error('Erro ao adicionar transação:', error);
     } finally {
