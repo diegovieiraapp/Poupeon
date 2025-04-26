@@ -112,12 +112,19 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
   
   addTransaction: async (transaction) => {
     try {
-      set({ isLoading: true });
-      
-      const transactionData = {
+      // Create base transaction data
+      const baseTransactionData = {
         ...transaction,
         amount: Number(transaction.amount),
         createdAt: Timestamp.now(),
+        recurrence: {
+          type: transaction.recurrence.type,
+          // Only include dayOfMonth and endDate for monthly transactions
+          ...(transaction.recurrence.type === 'monthly' && {
+            dayOfMonth: transaction.recurrence.dayOfMonth,
+            endDate: transaction.recurrence.endDate
+          })
+        }
       };
 
       // If it's a recurring transaction, create future instances
@@ -128,19 +135,19 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
 
         while (isBefore(currentDate, endDate)) {
           const currentTransactionData = {
-            ...transactionData,
+            ...baseTransactionData,
             date: format(currentDate, 'yyyy-MM-dd'),
           };
           await addDoc(collection(db, 'transactions'), currentTransactionData);
           currentDate = addMonths(currentDate, 1);
         }
       } else {
-        await addDoc(collection(db, 'transactions'), transactionData);
+        // For non-recurring transactions, just add a single document
+        await addDoc(collection(db, 'transactions'), baseTransactionData);
       }
     } catch (error) {
       console.error('Erro ao adicionar transação:', error);
-    } finally {
-      set({ isLoading: false });
+      throw error;
     }
   },
   
@@ -164,6 +171,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
       await updateDoc(transactionRef, updates);
     } catch (error) {
       console.error('Erro ao atualizar transação:', error);
+      throw error;
     } finally {
       set({ isLoading: false });
     }
@@ -180,6 +188,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
       await updateDoc(transactionRef, { status: newStatus });
     } catch (error) {
       console.error('Erro ao alterar status da transação:', error);
+      throw error;
     } finally {
       set({ isLoading: false });
     }
@@ -191,6 +200,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
       await deleteDoc(doc(db, 'transactions', id));
     } catch (error) {
       console.error('Erro ao deletar transação:', error);
+      throw error;
     } finally {
       set({ isLoading: false });
     }
