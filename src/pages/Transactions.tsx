@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { useTransactionStore, Transaction, TransactionType, PaymentStatus, RecurrenceType } from '../store/transactionStore';
-import { format, parseISO, addYears } from 'date-fns';
+import { format, parseISO, addYears, startOfMonth, endOfMonth, isWithinInterval, subMonths, addMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useForm } from 'react-hook-form';
 import { 
@@ -15,7 +15,10 @@ import {
   ArrowDown,
   CheckCircle,
   XCircle,
-  Repeat
+  Repeat,
+  Calendar,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { formatCurrency } from '../utils/currency';
 import type { CurrencyCode } from '../utils/currency';
@@ -56,7 +59,16 @@ const Transactions = () => {
   
   const [isAddingTransaction, setIsAddingTransaction] = useState(false);
   const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null);
-  const [filter, setFilter] = useState<{type?: TransactionType, search?: string, status?: PaymentStatus}>({});
+  const [filter, setFilter] = useState<{
+    type?: TransactionType;
+    search?: string;
+    status?: PaymentStatus;
+    startDate: Date;
+    endDate: Date;
+  }>({
+    startDate: startOfMonth(new Date()),
+    endDate: endOfMonth(new Date())
+  });
   const [sortConfig, setSortConfig] = useState<SortConfig>({ field: 'date', direction: 'desc' });
   const [newCategory, setNewCategory] = useState('');
   const [showCategoryInput, setShowCategoryInput] = useState(false);
@@ -88,8 +100,16 @@ const Transactions = () => {
   // Filter transactions for current user
   const userTransactions = transactions.filter(t => t.userId === user?.id);
   
-  // Apply filters
+  // Apply filters including date range
   const filteredTransactions = userTransactions.filter(transaction => {
+    const transactionDate = parseISO(transaction.date);
+    const isInDateRange = isWithinInterval(transactionDate, {
+      start: filter.startDate,
+      end: filter.endDate
+    });
+
+    if (!isInDateRange) return false;
+    
     if (filter.type && transaction.type !== filter.type) {
       return false;
     }
@@ -211,6 +231,32 @@ const Transactions = () => {
   const formatAmount = (amount: number | string): string => {
     const numAmount = Number(amount);
     return formatCurrency(numAmount, userCurrency);
+  };
+
+  const currentMonthLabel = format(filter.startDate, "MMMM 'de' yyyy", { locale: ptBR });
+
+  const handlePreviousMonth = () => {
+    setFilter(prev => ({
+      ...prev,
+      startDate: startOfMonth(subMonths(prev.startDate, 1)),
+      endDate: endOfMonth(subMonths(prev.startDate, 1))
+    }));
+  };
+
+  const handleNextMonth = () => {
+    setFilter(prev => ({
+      ...prev,
+      startDate: startOfMonth(addMonths(prev.startDate, 1)),
+      endDate: endOfMonth(addMonths(prev.startDate, 1))
+    }));
+  };
+
+  const handleCurrentMonth = () => {
+    setFilter(prev => ({
+      ...prev,
+      startDate: startOfMonth(new Date()),
+      endDate: endOfMonth(new Date())
+    }));
   };
   
   return (
@@ -477,6 +523,32 @@ const Transactions = () => {
               <option value="paid">Pago</option>
             </select>
           </div>
+
+          <div className="flex items-center mb-4 md:mb-0 space-x-2">
+            <Calendar className="h-5 w-5 text-gray-400" />
+            <div className="flex items-center bg-gray-100 rounded-md">
+              <button
+                onClick={handlePreviousMonth}
+                className="p-2 hover:bg-gray-200 rounded-l-md"
+                title="Mês anterior"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button
+                onClick={handleCurrentMonth}
+                className="px-3 py-1 hover:bg-gray-200 text-sm font-medium"
+              >
+                {currentMonthLabel}
+              </button>
+              <button
+                onClick={handleNextMonth}
+                className="p-2 hover:bg-gray-200 rounded-r-md"
+                title="Próximo mês"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
           
           <div className="flex-1">
             <input
@@ -512,8 +584,7 @@ const Transactions = () => {
                     onClick={() => handleSort('description')}
                   >
                     <span className="flex items-center">
-                      Descri
-ção {getSortIcon('description')}
+                      Descrição {getSortIcon('description')}
                     </span>
                   </th>
                   <th 
