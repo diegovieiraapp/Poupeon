@@ -18,7 +18,8 @@ import {
   Repeat,
   Calendar,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  AlertTriangle
 } from 'lucide-react';
 import { formatCurrency } from '../utils/currency';
 import type { CurrencyCode } from '../utils/currency';
@@ -41,9 +42,20 @@ interface TransactionFormData {
   recurrence: {
     type: RecurrenceType;
     dayOfMonth?: number;
+    dayOfWeek?: number;
     endDate?: string;
   };
 }
+
+const weekDays = [
+  { value: 0, label: 'Domingo' },
+  { value: 1, label: 'Segunda-feira' },
+  { value: 2, label: 'Terça-feira' },
+  { value: 3, label: 'Quarta-feira' },
+  { value: 4, label: 'Quinta-feira' },
+  { value: 5, label: 'Sexta-feira' },
+  { value: 6, label: 'Sábado' }
+];
 
 const Transactions = () => {
   const { user } = useAuthStore();
@@ -59,6 +71,7 @@ const Transactions = () => {
   
   const [isAddingTransaction, setIsAddingTransaction] = useState(false);
   const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [filter, setFilter] = useState<{
     type?: TransactionType;
     search?: string;
@@ -169,8 +182,8 @@ const Transactions = () => {
         dayOfMonth: data.recurrence.type === 'monthly' 
           ? new Date(data.date).getDate()
           : undefined,
-        endDate: data.recurrence.type === 'monthly'
-          ? format(addYears(new Date(data.date), 1), 'yyyy-MM-dd')
+        endDate: data.recurrence.type !== 'none'
+          ? data.recurrence.endDate || format(addYears(new Date(data.date), 1), 'yyyy-MM-dd')
           : undefined
       }
     };
@@ -206,6 +219,13 @@ const Transactions = () => {
     setIsAddingTransaction(false);
     setEditingTransactionId(null);
     reset();
+  };
+  
+  const handleDelete = async (id: string) => {
+    if (window.confirm('Tem certeza que deseja excluir esta transação? Esta ação não pode ser desfeita.')) {
+      await deleteTransaction(id);
+      setShowDeleteConfirm(null);
+    }
   };
   
   const handleAddCategory = () => {
@@ -286,7 +306,11 @@ const Transactions = () => {
               {editingTransactionId ? 'Editar Transação' : 'Nova Transação'}
             </h3>
             <button 
-              onClick={handleCancel}
+              onClick={() => {
+                if (window.confirm('Tem certeza que deseja cancelar? As alterações não salvas serão perdidas.')) {
+                  handleCancel();
+                }
+              }}
               className="text-gray-500 hover:text-gray-700"
             >
               <X className="h-5 w-5" />
@@ -400,15 +424,65 @@ const Transactions = () => {
                   >
                     <option value="none">Não recorrente</option>
                     <option value="monthly">Mensal</option>
+                    <option value="weekly">Semanal</option>
+                    <option value="biweekly">Quinzenal</option>
                   </select>
-                  {recurrenceType === 'monthly' && (
+                  {recurrenceType !== 'none' && (
                     <div className="flex items-center bg-blue-50 px-2 py-1 rounded-md">
                       <Repeat className="h-4 w-4 text-blue-500 mr-1" />
-                      <span className="text-xs text-blue-700">Mensal</span>
+                      <span className="text-xs text-blue-700">
+                        {recurrenceType === 'monthly' && 'Mensal'}
+                        {recurrenceType === 'weekly' && 'Semanal'}
+                        {recurrenceType === 'biweekly' && 'Quinzenal'}
+                      </span>
                     </div>
                   )}
                 </div>
               </div>
+
+              {recurrenceType === 'weekly' && (
+                <div className="mt-4">
+                  <label htmlFor="dayOfWeek" className="block text-sm font-medium text-gray-700 mb-1">
+                    Dia da Semana
+                  </label>
+                  <select
+                    id="dayOfWeek"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                    {...register('recurrence.dayOfWeek')}
+                  >
+                    {weekDays.map(day => (
+                      <option key={day.value} value={day.value}>
+                        {day.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {recurrenceType === 'biweekly' && (
+                <div className="mt-4">
+                  <p className="text-sm text-blue-600 mb-2">
+                    As transações quinzenais ocorrerão a cada dois sábados, começando do próximo sábado após a data selecionada.
+                  </p>
+                </div>
+              )}
+
+              {recurrenceType !== 'none' && (
+                <div className="mt-4">
+                  <label htmlFor="endDate" className="block text-sm font-medium text-gray-700 mb-1">
+                    Data Final (opcional)
+                  </label>
+                  <input
+                    type="date"
+                    id="endDate"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                    {...register('recurrence.endDate')}
+                  />
+                  <p className="mt-1 text-sm text-gray-500">
+                    Se não definida, as transações serão criadas para o próximo ano.
+                  </p>
+                </div>
+              )}
               
               <div className="md:col-span-2">
                 <div className="flex justify-between">
@@ -650,7 +724,8 @@ const Transactions = () => {
                       </button>
                     </td>
                     <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium text-right ${
-                      transaction.type === 'income' ? 'text-green-600' : 'text-red-600'
+                      transaction.type ===
+                      'income' ? 'text-green-600' : 'text-red-600'
                     }`}>
                       {transaction.type === 'income' ? '+' : '-'}{formatAmount(transaction.amount)}
                     </td>
@@ -663,7 +738,7 @@ const Transactions = () => {
                         <Edit className="h-4 w-4" />
                       </button>
                       <button
-                        onClick={() => deleteTransaction(transaction.id)}
+                        onClick={() => handleDelete(transaction.id)}
                         className="text-red-600 hover:text-red-900"
                         title="Excluir"
                       >

@@ -11,7 +11,8 @@ import {
   getDocs,
   Timestamp,
   onSnapshot,
-  orderBy
+  orderBy,
+  writeBatch
 } from 'firebase/firestore';
 import { 
   format, 
@@ -21,12 +22,16 @@ import {
   isAfter, 
   isSameDay,
   parseISO,
-  addMonths
+  addMonths,
+  addWeeks,
+  nextSaturday,
+  isSaturday,
+  addDays
 } from 'date-fns';
 
 export type TransactionType = 'income' | 'expense';
 export type PaymentStatus = 'pending' | 'paid';
-export type RecurrenceType = 'none' | 'monthly';
+export type RecurrenceType = 'none' | 'monthly' | 'weekly' | 'biweekly';
 
 export interface Transaction {
   id: string;
@@ -40,7 +45,9 @@ export interface Transaction {
   recurrence: {
     type: RecurrenceType;
     dayOfMonth?: number;
+    dayOfWeek?: number;
     endDate?: string;
+    groupId?: string; // Added to track recurring transactions
   };
   createdAt?: Timestamp;
 }
@@ -50,8 +57,8 @@ interface TransactionState {
   categories: { [key in TransactionType]: string[] };
   isLoading: boolean;
   addTransaction: (transaction: Omit<Transaction, 'id'>) => Promise<void>;
-  updateTransaction: (id: string, transaction: Partial<Omit<Transaction, 'id' | 'userId'>>) => Promise<void>;
-  deleteTransaction: (id: string) => Promise<void>;
+  updateTransaction: (id: string, transaction: Partial<Omit<Transaction, 'id' | 'userId'>>, updateAll?: boolean) => Promise<void>;
+  deleteTransaction: (id: string, deleteAll?: boolean) => Promise<void>;
   toggleTransactionStatus: (id: string) => Promise<void>;
   addCategory: (type: TransactionType, category: string) => void;
   fetchTransactions: (userId: string) => Promise<void>;
@@ -112,38 +119,87 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
   
   addTransaction: async (transaction) => {
     try {
-      // Create base transaction data
+      const groupId = crypto.randomUUID(); // Generate unique ID for recurring group
+      
       const baseTransactionData = {
         ...transaction,
         amount: Number(transaction.amount),
         createdAt: Timestamp.now(),
         recurrence: {
-          type: transaction.recurrence.type,
-          // Only include dayOfMonth and endDate for monthly transactions
-          ...(transaction.recurrence.type === 'monthly' && {
-            dayOfMonth: transaction.recurrence.dayOfMonth,
-            endDate: transaction.recurrence.endDate
-          })
+          ...transaction.recurrence,
+          groupId: transaction.recurrence.type !== 'none' ? groupId : undefined
         }
       };
 
-      // If it's a recurring transaction, create future instances
-      if (transaction.recurrence.type === 'monthly') {
-        const startDate = parseISO(transaction.date);
-        const endDate = transaction.recurrence.endDate ? parseISO(transaction.recurrence.endDate) : addMonths(startDate, 12);
-        let currentDate = startDate;
+      // Remove undefined recurrence fields based on type
+      if (baseTransactionData.recurrence.type !== 'monthly') {
+        delete baseTransactionData.recurrence.dayOfMonth;
+      }
+      if (baseTransactionData.recurrence.type !== 'weekly') {
+        delete baseTransactionData.recurrence.dayOfWeek;
+      }
+      if (!baseTransactionData.recurrence.endDate) {
+        delete baseTransactionData.recurrence.endDate;
+      }
 
-        while (isBefore(currentDate, endDate)) {
-          const currentTransactionData = {
-            ...baseTransactionData,
-            date: format(currentDate, 'yyyy-MM-dd'),
-          };
-          await addDoc(collection(db, 'transactions'), currentTransactionData);
-          currentDate = addMonths(currentDate, 1);
+      const startDate = parseISO(transaction.date);
+      const endDate = transaction.recurrence.endDate 
+        ? parseISO(transaction.recurrence.endDate) 
+        : addMonths(startDate, 12);
+
+      const createTransaction = async (date: Date) => {
+        const transactionData = {
+          ...baseTransactionData,
+          date: format(date, 'yyyy-MM-dd'),
+        };
+        await addDoc(collection(db, 'transactions'), transactionData);
+      };
+
+      switch (transaction.recurrence.type) {
+        case 'monthly': {
+          let currentDate = startDate;
+          while (isBefore(currentDate, endDate)) {
+            await createTransaction(currentDate);
+            currentDate = addMonths(currentDate, 1);
+          }
+          break;
         }
-      } else {
-        // For non-recurring transactions, just add a single document
-        await addDoc(collection(db, 'transactions'), baseTransactionData);
+        
+        case 'weekly': {
+          let currentDate = startDate;
+          const targetDayOfWeek = transaction.recurrence.dayOfWeek || startDate.getDay();
+          
+          // Adjust first date to match target day of week if needed
+          const daysDiff = targetDayOfWeek - currentDate.getDay();
+          if (daysDiff !== 0) {
+            currentDate = addDays(currentDate, daysDiff + (daysDiff < 0 ? 7 : 0));
+          }
+          
+          while (isBefore(currentDate, endDate)) {
+            await createTransaction(currentDate);
+            currentDate = addWeeks(currentDate, 1);
+          }
+          break;
+        }
+        
+        case 'biweekly': {
+          let currentDate = startDate;
+          
+          // Find next Saturday if current date is not a Saturday
+          if (!isSaturday(currentDate)) {
+            currentDate = nextSaturday(currentDate);
+          }
+          
+          while (isBefore(currentDate, endDate)) {
+            await createTransaction(currentDate);
+            currentDate = addWeeks(currentDate, 2); // Add two weeks for biweekly
+          }
+          break;
+        }
+        
+        default:
+          await createTransaction(startDate);
+          break;
       }
     } catch (error) {
       console.error('Erro ao adicionar transação:', error);
@@ -151,10 +207,13 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
     }
   },
   
-  updateTransaction: async (id, updatedFields) => {
+  updateTransaction: async (id, updatedFields, updateAll = false) => {
     try {
       set({ isLoading: true });
       
+      const transaction = get().transactions.find(t => t.id === id);
+      if (!transaction) return;
+
       const updates: any = {
         ...updatedFields,
         amount: updatedFields.amount ? Number(updatedFields.amount) : undefined,
@@ -167,10 +226,58 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
         }
       });
 
-      const transactionRef = doc(db, 'transactions', id);
-      await updateDoc(transactionRef, updates);
+      if (updateAll && transaction.recurrence.groupId) {
+        // Update all transactions in the group
+        const batch = writeBatch(db);
+        const groupTransactions = get().transactions.filter(
+          t => t.recurrence.groupId === transaction.recurrence.groupId
+        );
+
+        for (const groupTransaction of groupTransactions) {
+          const ref = doc(db, 'transactions', groupTransaction.id);
+          batch.update(ref, updates);
+        }
+
+        await batch.commit();
+      } else {
+        // Update single transaction
+        const transactionRef = doc(db, 'transactions', id);
+        await updateDoc(transactionRef, updates);
+      }
     } catch (error) {
       console.error('Erro ao atualizar transação:', error);
+      throw error;
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+  
+  deleteTransaction: async (id: string, deleteAll = false) => {
+    try {
+      set({ isLoading: true });
+      
+      const transaction = get().transactions.find(t => t.id === id);
+      if (!transaction) return;
+
+      if (deleteAll && transaction.recurrence.groupId) {
+        // Delete all transactions in the group
+        const batch = writeBatch(db);
+        const groupTransactions = get().transactions.filter(
+          t => t.recurrence.groupId === transaction.recurrence.groupId
+        );
+
+        for (const groupTransaction of groupTransactions) {
+          const ref = doc(db, 'transactions', groupTransaction.id);
+          batch.delete(ref);
+        }
+
+        await batch.commit();
+      } else {
+        // Delete single transaction
+        await deleteDoc(doc(db, 'transactions', id));
+      }
+    } catch (error) {
+      console.error('Erro ao deletar transação:', error);
       throw error;
     } finally {
       set({ isLoading: false });
@@ -194,18 +301,6 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
     }
   },
 
-  deleteTransaction: async (id) => {
-    try {
-      set({ isLoading: true });
-      await deleteDoc(doc(db, 'transactions', id));
-    } catch (error) {
-      console.error('Erro ao deletar transação:', error);
-      throw error;
-    } finally {
-      set({ isLoading: false });
-    }
-  },
-  
   addCategory: (type, category) => {
     if (get().categories[type].includes(category)) return;
     
