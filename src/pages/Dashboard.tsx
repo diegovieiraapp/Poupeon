@@ -195,7 +195,7 @@ const Dashboard = () => {
           slot="1234567890"
           format="auto"
           responsive={true}
-          style={{ display: 'block' }}
+          style={{ display: 'block', marginBottom: '2rem' }}
         />
       </div>
       
@@ -319,7 +319,7 @@ const Dashboard = () => {
           slot="0987654321"
           format="auto"
           responsive={true}
-          style={{ display: 'block' }}
+          style={{ display: 'block', marginTop: '2rem' }}
         />
       </div>
       

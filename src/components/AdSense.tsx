@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 interface AdSenseProps {
   client: string;
@@ -9,10 +9,13 @@ interface AdSenseProps {
 }
 
 const AdSense: React.FC<AdSenseProps> = ({ client, slot, format = 'auto', responsive = true, style = {} }) => {
+  const adRef = useRef<HTMLModElement>(null);
+  
   useEffect(() => {
     try {
-      // Push the command to load ads
-      ((window as any).adsbygoogle = (window as any).adsbygoogle || []).push({});
+      if (adRef.current && !adRef.current.getAttribute('data-adsbygoogle-status')) {
+        ((window as any).adsbygoogle = (window as any).adsbygoogle || []).push({});
+      }
     } catch (error) {
       console.error('Error loading AdSense:', error);
     }
@@ -20,6 +23,7 @@ const AdSense: React.FC<AdSenseProps> = ({ client, slot, format = 'auto', respon
 
   return (
     <ins
+      ref={adRef}
       className="adsbygoogle"
       style={style}
       data-ad-client={client}
