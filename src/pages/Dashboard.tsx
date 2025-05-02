@@ -2,11 +2,11 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { useTransactionStore } from '../store/transactionStore';
-import { subMonths, startOfMonth, endOfMonth, format, startOfDay, endOfDay } from 'date-fns';
+import { subMonths, startOfMonth, endOfMonth, format, startOfDay, endOfDay, addMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Doughnut, Line } from 'react-chartjs-2';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearScale, PointElement, LineElement, Title } from 'chart.js';
-import { PlusCircle, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, DollarSign, ShieldCheck } from 'lucide-react';
+import { PlusCircle, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, DollarSign, ShieldCheck, ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
 import { formatCurrency } from '../utils/currency';
 import type { CurrencyCode } from '../utils/currency';
 
@@ -18,11 +18,12 @@ const Dashboard = () => {
   const { 
     transactions,
     getSummary,
+    getCumulativeSummary,
     getTransactionsByDateRange,
     fetchTransactions
   } = useTransactionStore();
   
-  const [currentDate] = useState(new Date());
+  const [selectedMonth, setSelectedMonth] = useState(new Date());
   const [periodLabel, setPeriodLabel] = useState('');
   
   useEffect(() => {
@@ -30,27 +31,42 @@ const Dashboard = () => {
       fetchTransactions(user.id);
     }
   }, [user]);
+
+  const handlePreviousMonth = () => {
+    setSelectedMonth(prevMonth => subMonths(prevMonth, 1));
+  };
+
+  const handleNextMonth = () => {
+    setSelectedMonth(prevMonth => addMonths(prevMonth, 1));
+  };
+
+  const handleCurrentMonth = () => {
+    setSelectedMonth(new Date());
+  };
   
-  const currentMonthStart = startOfMonth(currentDate);
-  const currentMonthEnd = endOfMonth(currentDate);
+  const currentMonthStart = startOfMonth(selectedMonth);
+  const currentMonthEnd = endOfMonth(selectedMonth);
   
-  const prevMonthStart = startOfMonth(subMonths(currentDate, 1));
-  const prevMonthEnd = endOfMonth(subMonths(currentDate, 1));
+  const prevMonthStart = startOfMonth(subMonths(selectedMonth, 1));
+  const prevMonthEnd = endOfMonth(subMonths(selectedMonth, 1));
   
-  const currentMonthSummary = getSummary(currentMonthStart, currentMonthEnd);
-  
+  // Get monthly summary
+  const monthSummary = getSummary(currentMonthStart, currentMonthEnd);
   const prevMonthSummary = getSummary(prevMonthStart, prevMonthEnd);
   
+  // Get cumulative summary up to current month
+  const cumulativeSummary = getCumulativeSummary(currentMonthEnd);
+  
   const incomeChange = prevMonthSummary.totalIncome !== 0
-    ? ((currentMonthSummary.totalIncome - prevMonthSummary.totalIncome) / prevMonthSummary.totalIncome) * 100
+    ? ((monthSummary.totalIncome - prevMonthSummary.totalIncome) / prevMonthSummary.totalIncome) * 100
     : 0;
     
   const expenseChange = prevMonthSummary.totalExpense !== 0
-    ? ((currentMonthSummary.totalExpense - prevMonthSummary.totalExpense) / prevMonthSummary.totalExpense) * 100
+    ? ((monthSummary.totalExpense - prevMonthSummary.totalExpense) / prevMonthSummary.totalExpense) * 100
     : 0;
     
   const balanceChange = prevMonthSummary.balance !== 0
-    ? ((currentMonthSummary.balance - prevMonthSummary.balance) / Math.abs(prevMonthSummary.balance)) * 100
+    ? ((monthSummary.balance - prevMonthSummary.balance) / Math.abs(prevMonthSummary.balance)) * 100
     : 0;
   
   const today = endOfDay(new Date());
@@ -59,10 +75,10 @@ const Dashboard = () => {
     .slice(0, 5);
   
   const expenseCategoriesData = {
-    labels: Object.keys(currentMonthSummary.byCategoryExpense),
+    labels: Object.keys(monthSummary.byCategoryExpense),
     datasets: [
       {
-        data: Object.values(currentMonthSummary.byCategoryExpense),
+        data: Object.values(monthSummary.byCategoryExpense),
         backgroundColor: [
           '#FF5A5F',
           '#FF9E80',
@@ -85,7 +101,7 @@ const Dashboard = () => {
     const expenseData = [];
     
     for (let i = 5; i >= 0; i--) {
-      const month = subMonths(currentDate, i);
+      const month = subMonths(selectedMonth, i);
       const monthStart = startOfMonth(month);
       const monthEnd = endOfMonth(month);
       const monthLabel = format(month, 'MMM', { locale: ptBR });
@@ -119,42 +135,57 @@ const Dashboard = () => {
   };
   
   useEffect(() => {
-    setPeriodLabel(format(currentDate, 'MMMM yyyy', { locale: ptBR }));
-  }, [currentDate]);
+    setPeriodLabel(format(selectedMonth, 'MMMM yyyy', { locale: ptBR }));
+  }, [selectedMonth]);
 
   const userCurrency = (user?.currency || 'BRL') as CurrencyCode;
 
-const emergencyFundTotal = user?.emergencyFund || 0;
-const income = currentMonthSummary.totalIncome || 0;
-const expenses = currentMonthSummary.totalExpense || 0;
-const balance = income - expenses;
+  const emergencyFundTotal = user?.emergencyFund || 0;
+  const cumulativeIncome = cumulativeSummary.totalIncome;
+  const cumulativeExpenses = cumulativeSummary.totalExpense;
+  const cumulativeBalance = cumulativeIncome - cumulativeExpenses;
+  const emergencyFundUsed = cumulativeSummary.emergencyFundUsed;
+  const emergencyFundRemaining = Math.max(0, emergencyFundTotal - emergencyFundUsed);
 
-let emergencyFundUsed = 0;
-let emergencyFundRemaining = 0;
+  const emergencyFundUsedPercentage = emergencyFundTotal > 0
+    ? (emergencyFundUsed / emergencyFundTotal) * 100
+    : 0;
 
-if (income < expenses) {
-  // Usa a reserva para cobrir o que faltar
-  const deficit = expenses - income;
-  emergencyFundUsed = Math.min(deficit, emergencyFundTotal);
-  emergencyFundRemaining = emergencyFundTotal - emergencyFundUsed;
-} else {
-  // Reposição: só se algo tiver sido usado
-  const previousUsed = currentMonthSummary.emergencyFundUsed || 0;
-  const replenish = Math.min(income - expenses, previousUsed);
-  emergencyFundUsed = Math.max(0, previousUsed - replenish);
-  emergencyFundRemaining = emergencyFundTotal - emergencyFundUsed;
-}
-
-const emergencyFundUsedPercentage = emergencyFundTotal > 0
-  ? (emergencyFundUsed / emergencyFundTotal) * 100
-  : 0;
-
-  
   return (
     <div className="py-6 fadeIn">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Painel</h1>
-        <p className="text-gray-600">Bem-vindo de volta, {user?.name}!</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Painel</h1>
+            <p className="text-gray-600">Bem-vindo de volta, {user?.name}!</p>
+          </div>
+          
+          <div className="flex items-center space-x-2 bg-white rounded-lg shadow-sm p-2">
+            <button
+              onClick={handlePreviousMonth}
+              className="p-2 hover:bg-gray-100 rounded-md"
+              title="Mês anterior"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+            <button
+              onClick={handleCurrentMonth}
+              className="px-3 py-1 hover:bg-gray-100 rounded-md flex items-center"
+            >
+              <Calendar className="h-4 w-4 mr-2" />
+              <span className="text-sm font-medium">
+                {format(selectedMonth, "MMMM 'de' yyyy", { locale: ptBR })}
+              </span>
+            </button>
+            <button
+              onClick={handleNextMonth}
+              className="p-2 hover:bg-gray-100 rounded-md"
+              title="Próximo mês"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
@@ -163,7 +194,7 @@ const emergencyFundUsedPercentage = emergencyFundTotal > 0
             <div>
               <p className="text-sm font-medium text-gray-600">Receita Total</p>
               <h3 className="text-2xl font-bold text-gray-900 mt-1">
-                {formatCurrency(currentMonthSummary.totalIncome || 0, userCurrency)}
+                {formatCurrency(cumulativeIncome || 0, userCurrency)}
               </h3>
             </div>
             <div className="p-2 bg-green-100 rounded-md">
@@ -179,7 +210,7 @@ const emergencyFundUsedPercentage = emergencyFundTotal > 0
             <span className={`text-sm ${incomeChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               {Math.abs(incomeChange).toFixed(1)}% {incomeChange >= 0 ? 'aumento' : 'redução'}
             </span>
-            <span className="text-xs text-gray-500 ml-1">em relação ao mês anterior</span>
+            <span className="text-xs text-gray-500 ml-1">este mês</span>
           </div>
         </div>
         
@@ -188,7 +219,7 @@ const emergencyFundUsedPercentage = emergencyFundTotal > 0
             <div>
               <p className="text-sm font-medium text-gray-600">Despesa Total</p>
               <h3 className="text-2xl font-bold text-gray-900 mt-1">
-                {formatCurrency(currentMonthSummary.totalExpense || 0, userCurrency)}
+                {formatCurrency(cumulativeExpenses || 0, userCurrency)}
               </h3>
             </div>
             <div className="p-2 bg-red-100 rounded-md">
@@ -204,7 +235,7 @@ const emergencyFundUsedPercentage = emergencyFundTotal > 0
             <span className={`text-sm ${expenseChange < 0 ? 'text-green-600' : 'text-red-600'}`}>
               {Math.abs(expenseChange).toFixed(1)}% {expenseChange < 0 ? 'redução' : 'aumento'}
             </span>
-            <span className="text-xs text-gray-500 ml-1">em relação ao mês anterior</span>
+            <span className="text-xs text-gray-500 ml-1">este mês</span>
           </div>
         </div>
         
@@ -213,7 +244,7 @@ const emergencyFundUsedPercentage = emergencyFundTotal > 0
             <div>
               <p className="text-sm font-medium text-gray-600">Saldo Atual</p>
               <h3 className="text-2xl font-bold text-gray-900 mt-1">
-                {formatCurrency(currentMonthSummary.balance || 0, userCurrency)}
+                {formatCurrency(cumulativeBalance || 0, userCurrency)}
               </h3>
             </div>
             <div className="p-2 bg-blue-100 rounded-md">
@@ -229,7 +260,7 @@ const emergencyFundUsedPercentage = emergencyFundTotal > 0
             <span className={`text-sm ${balanceChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               {Math.abs(balanceChange).toFixed(1)}% {balanceChange >= 0 ? 'aumento' : 'redução'}
             </span>
-            <span className="text-xs text-gray-500 ml-1">em relação ao mês anterior</span>
+            <span className="text-xs text-gray-500 ml-1">este mês</span>
           </div>
         </div>
 
@@ -312,7 +343,7 @@ const emergencyFundUsedPercentage = emergencyFundTotal > 0
             Despesas por Categoria <span className="text-sm font-normal text-gray-500">{periodLabel}</span>
           </h3>
           <div className="h-64 flex justify-center items-center">
-            {Object.keys(currentMonthSummary.byCategoryExpense).length > 0 ? (
+            {Object.keys(monthSummary.byCategoryExpense).length > 0 ? (
               <Doughnut 
                 data={expenseCategoriesData} 
                 options={{

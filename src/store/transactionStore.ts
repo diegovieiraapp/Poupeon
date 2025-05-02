@@ -26,7 +26,9 @@ import {
   addWeeks,
   nextSaturday,
   isSaturday,
-  addDays
+  addDays,
+  startOfYear,
+  endOfMonth
 } from 'date-fns';
 
 export type TransactionType = 'income' | 'expense';
@@ -47,7 +49,7 @@ export interface Transaction {
     dayOfMonth?: number;
     dayOfWeek?: number;
     endDate?: string;
-    groupId?: string; // Added to track recurring transactions
+    groupId?: string;
   };
   createdAt?: Timestamp;
 }
@@ -68,6 +70,15 @@ interface TransactionState {
     totalIncome: number;
     totalExpense: number;
     balance: number;
+    byCategoryIncome: { [category: string]: number };
+    byCategoryExpense: { [category: string]: number };
+    emergencyFundUsed: number;
+  };
+  getCumulativeSummary: (upToDate: Date) => {
+    totalIncome: number;
+    totalExpense: number;
+    balance: number;
+    emergencyFundUsed: number;
     byCategoryIncome: { [category: string]: number };
     byCategoryExpense: { [category: string]: number };
   };
@@ -119,7 +130,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
   
   addTransaction: async (transaction) => {
     try {
-      const groupId = crypto.randomUUID(); // Generate unique ID for recurring group
+      const groupId = crypto.randomUUID();
       
       const baseTransactionData = {
         ...transaction,
@@ -131,7 +142,6 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
         }
       };
 
-      // Remove undefined recurrence fields based on type
       if (baseTransactionData.recurrence.type !== 'monthly') {
         delete baseTransactionData.recurrence.dayOfMonth;
       }
@@ -169,7 +179,6 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
           let currentDate = startDate;
           const targetDayOfWeek = transaction.recurrence.dayOfWeek || startDate.getDay();
           
-          // Adjust first date to match target day of week if needed
           const daysDiff = targetDayOfWeek - currentDate.getDay();
           if (daysDiff !== 0) {
             currentDate = addDays(currentDate, daysDiff + (daysDiff < 0 ? 7 : 0));
@@ -185,14 +194,13 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
         case 'biweekly': {
           let currentDate = startDate;
           
-          // Find next Saturday if current date is not a Saturday
           if (!isSaturday(currentDate)) {
             currentDate = nextSaturday(currentDate);
           }
           
           while (isBefore(currentDate, endDate)) {
             await createTransaction(currentDate);
-            currentDate = addWeeks(currentDate, 2); // Add two weeks for biweekly
+            currentDate = addWeeks(currentDate, 2);
           }
           break;
         }
@@ -227,7 +235,6 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
       });
 
       if (updateAll && transaction.recurrence.groupId) {
-        // Update all transactions in the group
         const batch = writeBatch(db);
         const groupTransactions = get().transactions.filter(
           t => t.recurrence.groupId === transaction.recurrence.groupId
@@ -240,7 +247,6 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
 
         await batch.commit();
       } else {
-        // Update single transaction
         const transactionRef = doc(db, 'transactions', id);
         await updateDoc(transactionRef, updates);
       }
@@ -260,7 +266,6 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
       if (!transaction) return;
 
       if (deleteAll && transaction.recurrence.groupId) {
-        // Delete all transactions in the group
         const batch = writeBatch(db);
         const groupTransactions = get().transactions.filter(
           t => t.recurrence.groupId === transaction.recurrence.groupId
@@ -273,7 +278,6 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
 
         await batch.commit();
       } else {
-        // Delete single transaction
         await deleteDoc(doc(db, 'transactions', id));
       }
     } catch (error) {
@@ -343,6 +347,7 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
     
     let totalIncome = 0;
     let totalExpense = 0;
+    let emergencyFundUsed = 0;
     const byCategoryIncome: { [category: string]: number } = {};
     const byCategoryExpense: { [category: string]: number } = {};
     
@@ -356,6 +361,11 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
         byCategoryExpense[t.category] = (byCategoryExpense[t.category] || 0) + amount;
       }
     });
+
+    // Calculate emergency fund usage
+    if (totalExpense > totalIncome) {
+      emergencyFundUsed = totalExpense - totalIncome;
+    }
     
     return {
       totalIncome,
@@ -363,6 +373,44 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
       balance: totalIncome - totalExpense,
       byCategoryIncome,
       byCategoryExpense,
+      emergencyFundUsed
     };
   },
+
+  getCumulativeSummary: (upToDate: Date) => {
+    const startOfCurrentYear = startOfYear(upToDate);
+    const transactions = get().getTransactionsByDateRange(startOfCurrentYear, upToDate)
+      .filter(t => t.status === 'paid');
+    
+    let totalIncome = 0;
+    let totalExpense = 0;
+    let emergencyFundUsed = 0;
+    const byCategoryIncome: { [category: string]: number } = {};
+    const byCategoryExpense: { [category: string]: number } = {};
+    
+    transactions.forEach((t) => {
+      const amount = Number(t.amount) || 0;
+      if (t.type === 'income') {
+        totalIncome += amount;
+        byCategoryIncome[t.category] = (byCategoryIncome[t.category] || 0) + amount;
+      } else {
+        totalExpense += amount;
+        byCategoryExpense[t.category] = (byCategoryExpense[t.category] || 0) + amount;
+      }
+    });
+
+    // Calculate cumulative emergency fund usage
+    if (totalExpense > totalIncome) {
+      emergencyFundUsed = totalExpense - totalIncome;
+    }
+    
+    return {
+      totalIncome,
+      totalExpense,
+      balance: totalIncome - totalExpense,
+      emergencyFundUsed,
+      byCategoryIncome,
+      byCategoryExpense
+    };
+  }
 }));
