@@ -23,17 +23,13 @@ import {
   isSameDay,
   parseISO,
   addMonths,
-  addWeeks,
-  nextSaturday,
-  isSaturday,
-  addDays,
   startOfYear,
   endOfMonth
 } from 'date-fns';
 
 export type TransactionType = 'income' | 'expense';
 export type PaymentStatus = 'pending' | 'paid';
-export type RecurrenceType = 'none' | 'monthly' | 'weekly' | 'biweekly';
+export type RecurrenceType = 'none' | 'monthly';
 
 export interface Transaction {
   id: string;
@@ -41,13 +37,12 @@ export interface Transaction {
   amount: number;
   description: string;
   category: string;
-  date: string; // Format: "yyyy-MM-dd"
+  date: string;
   type: TransactionType;
   status: PaymentStatus;
   recurrence: {
     type: RecurrenceType;
     dayOfMonth?: number;
-    dayOfWeek?: number;
     endDate?: string;
     groupId?: string;
   };
@@ -145,9 +140,6 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
       if (baseTransactionData.recurrence.type !== 'monthly') {
         delete baseTransactionData.recurrence.dayOfMonth;
       }
-      if (baseTransactionData.recurrence.type !== 'weekly') {
-        delete baseTransactionData.recurrence.dayOfWeek;
-      }
       if (!baseTransactionData.recurrence.endDate) {
         delete baseTransactionData.recurrence.endDate;
       }
@@ -165,49 +157,14 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
         await addDoc(collection(db, 'transactions'), transactionData);
       };
 
-      switch (transaction.recurrence.type) {
-        case 'monthly': {
-          let currentDate = startDate;
-          while (isBefore(currentDate, endDate)) {
-            await createTransaction(currentDate);
-            currentDate = addMonths(currentDate, 1);
-          }
-          break;
+      if (transaction.recurrence.type === 'monthly') {
+        let currentDate = startDate;
+        while (isBefore(currentDate, endDate)) {
+          await createTransaction(currentDate);
+          currentDate = addMonths(currentDate, 1);
         }
-        
-        case 'weekly': {
-          let currentDate = startDate;
-          const targetDayOfWeek = transaction.recurrence.dayOfWeek || startDate.getDay();
-          
-          const daysDiff = targetDayOfWeek - currentDate.getDay();
-          if (daysDiff !== 0) {
-            currentDate = addDays(currentDate, daysDiff + (daysDiff < 0 ? 7 : 0));
-          }
-          
-          while (isBefore(currentDate, endDate)) {
-            await createTransaction(currentDate);
-            currentDate = addWeeks(currentDate, 1);
-          }
-          break;
-        }
-        
-        case 'biweekly': {
-          let currentDate = startDate;
-          
-          if (!isSaturday(currentDate)) {
-            currentDate = nextSaturday(currentDate);
-          }
-          
-          while (isBefore(currentDate, endDate)) {
-            await createTransaction(currentDate);
-            currentDate = addWeeks(currentDate, 2);
-          }
-          break;
-        }
-        
-        default:
-          await createTransaction(startDate);
-          break;
+      } else {
+        await createTransaction(startDate);
       }
     } catch (error) {
       console.error('Erro ao adicionar transação:', error);
@@ -362,7 +319,6 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
       }
     });
 
-    // Calculate emergency fund usage
     if (totalExpense > totalIncome) {
       emergencyFundUsed = totalExpense - totalIncome;
     }
@@ -399,7 +355,6 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
       }
     });
 
-    // Calculate cumulative emergency fund usage
     if (totalExpense > totalIncome) {
       emergencyFundUsed = totalExpense - totalIncome;
     }

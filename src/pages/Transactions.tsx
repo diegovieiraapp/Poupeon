@@ -42,20 +42,9 @@ interface TransactionFormData {
   recurrence: {
     type: RecurrenceType;
     dayOfMonth?: number;
-    dayOfWeek?: number;
     endDate?: string;
   };
 }
-
-const weekDays = [
-  { value: 0, label: 'Domingo' },
-  { value: 1, label: 'Segunda-feira' },
-  { value: 2, label: 'Terça-feira' },
-  { value: 3, label: 'Quarta-feira' },
-  { value: 4, label: 'Quinta-feira' },
-  { value: 5, label: 'Sexta-feira' },
-  { value: 6, label: 'Sábado' }
-];
 
 const Transactions = () => {
   const { user } = useAuthStore();
@@ -424,48 +413,15 @@ const Transactions = () => {
                   >
                     <option value="none">Não recorrente</option>
                     <option value="monthly">Mensal</option>
-                    <option value="weekly">Semanal</option>
-                    <option value="biweekly">Quinzenal</option>
                   </select>
                   {recurrenceType !== 'none' && (
                     <div className="flex items-center bg-blue-50 px-2 py-1 rounded-md">
                       <Repeat className="h-4 w-4 text-blue-500 mr-1" />
-                      <span className="text-xs text-blue-700">
-                        {recurrenceType === 'monthly' && 'Mensal'}
-                        {recurrenceType === 'weekly' && 'Semanal'}
-                        {recurrenceType === 'biweekly' && 'Quinzenal'}
-                      </span>
+                      <span className="text-xs text-blue-700">Mensal</span>
                     </div>
                   )}
                 </div>
               </div>
-
-              {recurrenceType === 'weekly' && (
-                <div className="mt-4">
-                  <label htmlFor="dayOfWeek" className="block text-sm font-medium text-gray-700 mb-1">
-                    Dia da Semana
-                  </label>
-                  <select
-                    id="dayOfWeek"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                    {...register('recurrence.dayOfWeek')}
-                  >
-                    {weekDays.map(day => (
-                      <option key={day.value} value={day.value}>
-                        {day.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {recurrenceType === 'biweekly' && (
-                <div className="mt-4">
-                  <p className="text-sm text-blue-600 mb-2">
-                    As transações quinzenais ocorrerão a cada dois sábados, começando do próximo sábado após a data selecionada.
-                  </p>
-                </div>
-              )}
 
               {recurrenceType !== 'none' && (
                 <div className="mt-4">
