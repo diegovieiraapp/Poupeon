@@ -9,6 +9,7 @@ import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearSca
 import { PlusCircle, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, DollarSign, ShieldCheck, ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
 import { formatCurrency } from '../utils/currency';
 import type { CurrencyCode } from '../utils/currency';
+import AdSense from '../components/AdSense';
 
 ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, PointElement, LineElement, Title);
 
@@ -187,6 +188,16 @@ const Dashboard = () => {
           </div>
         </div>
       </div>
+
+      <div className="mb-8">
+        <AdSense
+          client="ca-pub-8030661382354180"
+          slot="1234567890"
+          format="auto"
+          responsive={true}
+          style={{ display: 'block' }}
+        />
+      </div>
       
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         <div className="bg-white rounded-lg shadow-sm p-6">
@@ -300,6 +311,16 @@ const Dashboard = () => {
             </p>
           </div>
         </div>
+      </div>
+
+      <div className="mb-8">
+        <AdSense
+          client="ca-pub-8030661382354180"
+          slot="0987654321"
+          format="auto"
+          responsive={true}
+          style={{ display: 'block' }}
+        />
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
