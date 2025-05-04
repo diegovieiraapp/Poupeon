@@ -17,7 +17,7 @@ import {
   parseISO
 } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, Repeat } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Repeat, CheckCircle } from 'lucide-react';
 import { formatCurrency } from '../utils/currency';
 
 const Calendar = () => {
@@ -65,22 +65,38 @@ const Calendar = () => {
     const dayTransactions = getTransactionsForDay(day);
     let income = 0;
     let expense = 0;
+    let paidIncome = 0;
+    let paidExpense = 0;
 
     dayTransactions.forEach(t => {
       const amount = Number(t.amount) || 0;
       if (t.type === 'income') {
         income += amount;
+        if (t.status === 'paid') paidIncome += amount;
       } else {
         expense += amount;
+        if (t.status === 'paid') paidExpense += amount;
       }
     });
 
-    return { income, expense, balance: income - expense };
+    return { 
+      income, 
+      expense, 
+      paidIncome,
+      paidExpense,
+      balance: income - expense 
+    };
   };
 
   // Get selected day transactions and summary
   const selectedDayTransactions = selectedDate ? getTransactionsForDay(selectedDate) : [];
-  const selectedDaySummary = selectedDate ? getDaySummary(selectedDate) : { income: 0, expense: 0, balance: 0 };
+  const selectedDaySummary = selectedDate ? getDaySummary(selectedDate) : { 
+    income: 0, 
+    expense: 0, 
+    paidIncome: 0,
+    paidExpense: 0,
+    balance: 0 
+  };
 
   // Week days header
   const weekDays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -164,12 +180,30 @@ const Calendar = () => {
                   {dayTransactions.length > 0 && (
                     <div className="space-y-1 text-xs">
                       {daySummary.income > 0 && (
-                        <div className="text-green-600 font-medium truncate">
+                        <div className={`font-medium truncate flex items-center ${
+                          daySummary.paidIncome === daySummary.income 
+                            ? 'text-blue-600' 
+                            : daySummary.paidIncome > 0 
+                              ? 'text-indigo-600'
+                              : 'text-green-600'
+                        }`}>
+                          {daySummary.paidIncome === daySummary.income && (
+                            <CheckCircle className="h-3 w-3 mr-1" />
+                          )}
                           {formatCurrency(daySummary.income, user?.currency)}
                         </div>
                       )}
                       {daySummary.expense > 0 && (
-                        <div className="text-red-600 font-medium truncate">
+                        <div className={`font-medium truncate flex items-center ${
+                          daySummary.paidExpense === daySummary.expense 
+                            ? 'text-blue-600' 
+                            : daySummary.paidExpense > 0 
+                              ? 'text-indigo-600'
+                              : 'text-red-600'
+                        }`}>
+                          {daySummary.paidExpense === daySummary.expense && (
+                            <CheckCircle className="h-3 w-3 mr-1" />
+                          )}
                           {formatCurrency(daySummary.expense, user?.currency)}
                         </div>
                       )}
@@ -239,13 +273,18 @@ const Calendar = () => {
                             <p className="text-sm font-medium text-gray-900">
                               {transaction.description}
                             </p>
+                            {transaction.status === 'paid' && (
+                              <CheckCircle className="h-4 w-4 text-blue-500 ml-2" />
+                            )}
                           </div>
                           <p className="text-xs text-gray-500">
                             {transaction.category}
                           </p>
                         </div>
                         <p className={`text-sm font-medium ${
-                          transaction.type === 'income' ? 'text-green-600' : 'text-red-600'
+                          transaction.type === 'income' 
+                            ? transaction.status === 'paid' ? 'text-blue-600' : 'text-green-600'
+                            : transaction.status === 'paid' ? 'text-blue-600' : 'text-red-600'
                         }`}>
                           {transaction.type === 'income' ? '+' : '-'}
                           {formatCurrency(transaction.amount, user?.currency)}
