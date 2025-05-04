@@ -131,18 +131,15 @@ export const useTransactionStore = create<TransactionState>((set, get) => ({
         ...transaction,
         amount: Number(transaction.amount),
         createdAt: Timestamp.now(),
-        recurrence: {
-          ...transaction.recurrence,
-          groupId: transaction.recurrence.type !== 'none' ? groupId : undefined
-        }
+        recurrence: transaction.recurrence.type === 'none' 
+          ? { type: 'none' }
+          : {
+              ...transaction.recurrence,
+              groupId,
+              dayOfMonth: transaction.recurrence.type === 'monthly' ? transaction.recurrence.dayOfMonth : undefined,
+              endDate: transaction.recurrence.endDate || undefined
+            }
       };
-
-      if (baseTransactionData.recurrence.type !== 'monthly') {
-        delete baseTransactionData.recurrence.dayOfMonth;
-      }
-      if (!baseTransactionData.recurrence.endDate) {
-        delete baseTransactionData.recurrence.endDate;
-      }
 
       const startDate = parseISO(transaction.date);
       const endDate = transaction.recurrence.endDate 
