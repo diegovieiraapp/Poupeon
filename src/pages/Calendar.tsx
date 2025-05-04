@@ -17,7 +17,7 @@ import {
   parseISO
 } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, Repeat, CheckCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Repeat, CheckCircle, XCircle } from 'lucide-react';
 import { formatCurrency } from '../utils/currency';
 
 const Calendar = () => {
@@ -26,7 +26,8 @@ const Calendar = () => {
     transactions,
     getSummary,
     getTransactionsByDateRange,
-    getTransactionsByMonth
+    getTransactionsByMonth,
+    toggleTransactionStatus
   } = useTransactionStore();
   
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -281,14 +282,34 @@ const Calendar = () => {
                             {transaction.category}
                           </p>
                         </div>
-                        <p className={`text-sm font-medium ${
-                          transaction.type === 'income' 
-                            ? transaction.status === 'paid' ? 'text-blue-600' : 'text-green-600'
-                            : transaction.status === 'paid' ? 'text-blue-600' : 'text-red-600'
-                        }`}>
-                          {transaction.type === 'income' ? '+' : '-'}
-                          {formatCurrency(transaction.amount, user?.currency)}
-                        </p>
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleTransactionStatus(transaction.id);
+                            }}
+                            className={`p-1 rounded-full transition-colors ${
+                              transaction.status === 'paid'
+                                ? 'bg-blue-100 text-blue-600 hover:bg-blue-200'
+                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                            }`}
+                            title={transaction.status === 'paid' ? 'Marcar como pendente' : 'Marcar como pago'}
+                          >
+                            {transaction.status === 'paid' ? (
+                              <CheckCircle className="h-4 w-4" />
+                            ) : (
+                              <XCircle className="h-4 w-4" />
+                            )}
+                          </button>
+                          <p className={`text-sm font-medium ${
+                            transaction.type === 'income' 
+                              ? transaction.status === 'paid' ? 'text-blue-600' : 'text-green-600'
+                              : transaction.status === 'paid' ? 'text-blue-600' : 'text-red-600'
+                          }`}>
+                            {transaction.type === 'income' ? '+' : '-'}
+                            {formatCurrency(transaction.amount, user?.currency)}
+                          </p>
+                        </div>
                       </div>
                     </div>
                   ))}
