@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store/authStore';
+import { useGoogleAnalytics } from './hooks/useGoogleAnalytics';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
@@ -12,6 +13,7 @@ import ProtectedRoute from './components/auth/ProtectedRoute';
 
 function App() {
   const { isAuthenticated } = useAuthStore();
+  useGoogleAnalytics();
 
   return (
     <Routes>
